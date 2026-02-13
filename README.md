@@ -111,25 +111,42 @@ foreach ($subId in $subscriptionIds) {
 }
 ```
 
-### 5. Done!
+### 5. Test Before Production (Required)
 
-The runbooks will automatically execute on the 3rd Sunday of each month. No further action required.
+⚠️ **Always validate your configuration before relying on scheduled execution.**
 
-## Initial Validation
-
-After deployment, run a one-time test with DryRun enabled to verify your configuration:
-
+**Step 1: DryRun Test**
 ```powershell
 # In Azure Portal: Automation Account → Runbooks → PreMaintenance-PRE → Start
-# Set DryRun = true
-
-# Or via PowerShell:
-Start-AzAutomationRunbook -ResourceGroupName "rg-automation" `
-  -AutomationAccountName "aa-vm-maintenance" -Name "PreMaintenance-PRE" `
-  -Parameters @{ DryRun = $true }
+# Set parameter: DryRun = true
 ```
 
-Review the job output to confirm the correct VMs are being targeted.
+Review the job output to confirm the correct VMs are being targeted:
+- Check "VMs to start" list matches your expectations
+- Verify no unexpected VMs are included
+- Confirm storage account connectivity works
+
+**Step 2: Live Test (Non-Production)**
+
+Run against PRE/non-production VMs first with DryRun = false:
+```powershell
+# Start PRE VMs
+Start-AzAutomationRunbook -ResourceGroupName "rg-automation" `
+  -AutomationAccountName "aa-vm-maintenance" -Name "PreMaintenance-PRE"
+
+# Wait, verify VMs started, then stop them
+Start-AzAutomationRunbook -ResourceGroupName "rg-automation" `
+  -AutomationAccountName "aa-vm-maintenance" -Name "PostMaintenance-PRE"
+```
+
+**Step 3: Verify Results**
+- Confirm VMs started and stopped as expected
+- Check state file was created and deleted in storage container
+- Review job output for any warnings
+
+### 6. Done!
+
+Once testing is successful, the runbooks will automatically execute on the 3rd Sunday of each month.
 
 ## Configuration Reference
 

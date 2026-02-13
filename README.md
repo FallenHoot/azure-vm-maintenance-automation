@@ -3,78 +3,180 @@
 > **DISCLAIMER**  
 > This script is provided as sample guidance only and is not a supported Microsoft product. It is provided "AS IS", without warranty of any kind, express or implied, including but not limited to the warranties of merchantability, fitness for a particular purpose, and noninfringement. Microsoft and the author(s) are not liable for any damages arising from the use of this code. Review and test in a non-production environment before use.
 
-Automated VM maintenance runbooks for Azure Automation. This solution starts deallocated VMs before scheduled maintenance windows and stops them afterward, saving the state to Azure Storage.
+**Set it and forget it.** This Azure Automation solution automatically starts deallocated VMs before scheduled maintenance windows and stops them afterward. Once deployed, it runs on schedule without manual intervention.
 
-## Features
+## How It Works
 
-- **Flexible VM Filtering**: Filter VMs by name pattern (regex) or Azure tags
-- **Environment Separation**: Dedicated runbooks for PRE/PRD or unified runbooks with parameters
-- **Scheduled Execution**: Automatically runs on the 3rd Sunday of each month
-- **Multi-Subscription**: Scans all enabled subscriptions in your tenant
-- **State Persistence**: Saves VM state to Azure Blob Storage for reliable post-maintenance recovery
-- **DryRun Mode**: Test changes without affecting VMs
-- **Idempotent**: Safe to run multiple times - only starts deallocated VMs
-
-## VM Filtering Options
-
-The runbooks support two filtering methods to identify which VMs to manage:
-
-### Option 1: Filter by VM Name (Default)
-
-Uses regex pattern matching against VM names. Great for naming conventions.
-
-| Parameter | Default (PRE) | Default (PRD) | Description |
-|-----------|---------------|---------------|-------------|
-| `FilterBy` | `Name` | `Name` | Filter method |
-| `NamePattern` | `PRE` | `PRD` | Regex pattern to match VM names |
-
-**Examples:**
-```powershell
-# Match VMs containing "PRE" anywhere in the name
--NamePattern "PRE"          # Matches: VM-PRE-01, PREVM, MyPREServer
-
-# Match VMs starting with "DEV" or "TST"
--NamePattern "^(DEV|TST)"   # Matches: DEV-Server01, TST-DB01
-
-# Match VMs ending with "-prod"
--NamePattern "-prod$"       # Matches: Web-prod, API-prod
-
-# Match specific prefixes with numbers
--NamePattern "^APP[0-9]+"   # Matches: APP01, APP123
+```
+┌──────────────────────────────────────────────────────────────────┐
+│  3rd Sunday of Each Month                                        │
+├──────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  06:00 ─► PreMaintenance Runbook                                │
+│           • Scans all subscriptions for deallocated VMs         │
+│           • Filters VMs by name pattern or tag                  │
+│           • Starts matching VMs                                 │
+│           • Saves state to Azure Blob Storage                   │
+│                                                                  │
+│  ┌────────────────────────────────────────────────────────┐     │
+│  │         Maintenance Window (VMs Running)               │     │
+│  └────────────────────────────────────────────────────────┘     │
+│                                                                  │
+│  22:00 ─► PostMaintenance Runbook                               │
+│           • Reads state file from Blob Storage                  │
+│           • Stops only the VMs that were started                │
+│           • Cleans up state file                                │
+│                                                                  │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
-### Option 2: Filter by Azure Tags
+## Quick Start
 
-Uses Azure resource tags for flexible grouping. Ideal for complex environments.
+### 1. Configure Your Settings
 
-| Parameter | Default (PRE) | Default (PRD) | Description |
-|-----------|---------------|---------------|-------------|
-| `FilterBy` | `Tag` | `Tag` | Filter method |
-| `TagName` | `env` | `env` | Tag key to filter by |
-| `TagValue` | `pre` | `prod` | Tag value to match |
+Edit [infra/main.bicepparam](infra/main.bicepparam) **before deployment**:
 
-**Common Tag Strategies:**
-```powershell
-# By environment
--FilterBy "Tag" -TagName "env" -TagValue "production"
+```bicep
+// Storage account for state persistence (must exist)
+param storageAccountName = 'yourstorageaccount'
+param storageAccountRG = 'your-storage-rg'
 
-# By maintenance window
--FilterBy "Tag" -TagName "MaintenanceWindow" -TagValue "Sunday-0600"
+// Schedule times (24-hour format)
+param preMaintenanceTimePRE = '06:00'   // When to start VMs
+param postMaintenanceTimePRE = '22:00'  // When to stop VMs
 
-# By application
--FilterBy "Tag" -TagName "Application" -TagValue "SAP"
+// Time zone
+param timeZone = 'America/Chicago'
 
-# By patch group
--FilterBy "Tag" -TagName "PatchGroup" -TagValue "Group1"
+// Runbook style: 'Separate' (4 runbooks) or 'Combined' (2 runbooks)
+param runbookStyle = 'Separate'
 ```
 
-**Recommended Tags for VMs:**
-| Tag | Values | Purpose |
-|-----|--------|---------|
-| `env` | `dev`, `test`, `pre`, `prod` | Environment classification |
-| `MaintenanceWindow` | `Sunday-0600`, `Sunday-2200` | Specific maintenance schedule |
-| `AutoStart` | `true`, `false` | Include/exclude from automation |
-| `StartOrder` | `1`, `2`, `3` | Startup sequencing (for dependencies) |
+### 2. Configure VM Filtering
+
+Choose how VMs are identified. Edit the default values in the runbook files **before deployment**:
+
+**Option A: Filter by VM Name** (default)
+```powershell
+# In PreMaintenance-PRE.ps1 / PreMaintenance-PRD.ps1
+$NamePattern = "PRE"    # Matches VMs with "PRE" in the name
+$NamePattern = "PRD"    # Matches VMs with "PRD" in the name
+
+# Regex examples:
+$NamePattern = "^YOURPREFIX"     # Starts with YOURPREFIX
+$NamePattern = "-prod$"          # Ends with -prod
+$NamePattern = "^(APP|WEB|DB)"   # Starts with APP, WEB, or DB
+```
+
+**Option B: Filter by Azure Tag**
+```powershell
+# In PreMaintenance-PRE.ps1 / PreMaintenance-PRD.ps1
+$FilterBy = "Tag"
+$TagName = "env"
+$TagValue = "pre"       # or "prod", "dev", etc.
+
+# Common tag strategies:
+$TagName = "MaintenanceWindow"
+$TagValue = "Sunday-0600"
+
+$TagName = "PatchGroup"
+$TagValue = "Group1"
+```
+
+### 3. Deploy
+
+```powershell
+git clone https://github.com/FallenHoot/azure-vm-maintenance-automation.git
+cd azure-vm-maintenance-automation
+
+# Deploy (choose one style)
+.\scripts\Deploy-Automation.ps1 -ResourceGroupName "rg-automation" -Location "centralus"
+
+# Or for combined runbooks
+.\scripts\Deploy-Automation.ps1 -ResourceGroupName "rg-automation" -Location "centralus" -RunbookStyle "Combined"
+```
+
+### 4. Assign Roles to Additional Subscriptions
+
+If VMs span multiple subscriptions, assign the Managed Identity to each:
+
+```powershell
+# Get the Principal ID from deployment output, then:
+$principalId = "<from-deployment-output>"
+$subscriptionIds = @("sub-1", "sub-2", "sub-3")
+
+foreach ($subId in $subscriptionIds) {
+    New-AzRoleAssignment -ObjectId $principalId -RoleDefinitionName "Virtual Machine Contributor" -Scope "/subscriptions/$subId"
+    New-AzRoleAssignment -ObjectId $principalId -RoleDefinitionName "Reader" -Scope "/subscriptions/$subId"
+}
+```
+
+### 5. Done!
+
+The runbooks will automatically execute on the 3rd Sunday of each month. No further action required.
+
+## Initial Validation
+
+After deployment, run a one-time test with DryRun enabled to verify your configuration:
+
+```powershell
+# In Azure Portal: Automation Account → Runbooks → PreMaintenance-PRE → Start
+# Set DryRun = true
+
+# Or via PowerShell:
+Start-AzAutomationRunbook -ResourceGroupName "rg-automation" `
+  -AutomationAccountName "aa-vm-maintenance" -Name "PreMaintenance-PRE" `
+  -Parameters @{ DryRun = $true }
+```
+
+Review the job output to confirm the correct VMs are being targeted.
+
+## Configuration Reference
+
+### Runbook Defaults
+
+| Setting | PRE Runbook | PRD Runbook | Description |
+|---------|-------------|-------------|-------------|
+| `FilterBy` | `Name` | `Name` | `Name` or `Tag` |
+| `NamePattern` | `PRE` | `PRD` | Regex to match VM names |
+| `TagName` | `env` | `env` | Tag key (if FilterBy=Tag) |
+| `TagValue` | `pre` | `prod` | Tag value (if FilterBy=Tag) |
+| `StorageAccountName` | `patchingvmlist` | `patchingvmlist` | State storage |
+| `StorageAccountRG` | `CAP-TST-01` | `CAP-TST-01` | Storage RG |
+| `ContainerName` | `vm-maintenance` | `vm-maintenance` | Blob container |
+
+### Schedule Configuration
+
+| Schedule | Time | Purpose |
+|----------|------|---------|
+| PreMaintenance-PRE | 06:00 (3rd Sunday) | Start PRE VMs |
+| PreMaintenance-PRD | 06:00 (3rd Sunday) | Start PRD VMs |
+| PostMaintenance-PRE | 22:00 (3rd Sunday) | Stop PRE VMs |
+| PostMaintenance-PRD | 22:00 (3rd Sunday) | Stop PRD VMs |
+
+### Required Role Assignments
+
+| Role | Scope | Purpose |
+|------|-------|---------|
+| Virtual Machine Contributor | Each subscription with VMs | Start/Stop VMs |
+| Reader | Each subscription with VMs | List VMs |
+| Storage Blob Data Contributor | Storage account | State persistence |
+
+## Excluding VMs from Automation
+
+To permanently exclude a VM, ensure it doesn't match your filter:
+
+- **Name filter**: Rename VM or change `NamePattern`
+- **Tag filter**: Remove the tag or change its value
+
+To temporarily exclude a VM for one maintenance window, ensure it's **running** (not deallocated) before the PreMaintenance runbook executes.
+
+## Monitoring
+
+View job history in Azure Portal:
+**Automation Account → Jobs → Select job → Output**
+
+Or enable diagnostic settings to send logs to Log Analytics for long-term monitoring.
 
 ## Architecture
 
@@ -82,290 +184,64 @@ Uses Azure resource tags for flexible grouping. Ideal for complex environments.
 ┌─────────────────────────────────────────────────────────────────┐
 │                    Azure Automation Account                      │
 ├─────────────────────────────────────────────────────────────────┤
-│  Runbooks (Choose Your Style):                                  │
-│  ┌────────────────────────────────────────────────────────┐    │
-│  │ Option A: Environment-Specific Runbooks                │    │
-│  │   PreMaintenance-PRE   │   PostMaintenance-PRE        │    │
-│  │   PreMaintenance-PRD   │   PostMaintenance-PRD        │    │
-│  ├────────────────────────────────────────────────────────┤    │
-│  │ Option B: Combined Runbooks with Environment Parameter │    │
-│  │   PreMaintenance-Combined -Environment PRE|PRD        │    │
-│  │   PostMaintenance-Combined -Environment PRE|PRD       │    │
-│  └────────────────────────────────────────────────────────┘    │
-│                                                                  │
-│  Schedules: 3rd Sunday each month                               │
-│  └─► PRE: 06:00 (Pre) / 22:00 (Post)                           │
-│  └─► PRD: 06:00 (Pre) / 22:00 (Post)                           │
+│  Runbooks:                        Schedules:                    │
+│  ┌──────────────────────┐        ┌──────────────────────────┐  │
+│  │ PreMaintenance-PRE   │◄───────│ 3rd Sunday 06:00         │  │
+│  │ PreMaintenance-PRD   │◄───────│ 3rd Sunday 06:00         │  │
+│  │ PostMaintenance-PRE  │◄───────│ 3rd Sunday 22:00         │  │
+│  │ PostMaintenance-PRD  │◄───────│ 3rd Sunday 22:00         │  │
+│  └──────────────────────┘        └──────────────────────────┘  │
 │                                                                  │
 │  System-Assigned Managed Identity                               │
-│  └─► VM Contributor (across subscriptions)                     │
-│  └─► Storage Blob Data Contributor                             │
+│  └─► Authenticates to Azure (no credentials stored)            │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                    Azure Storage Account                         │
 │  Container: vm-maintenance                                       │
-│  └─► PRE-started-vms-2026-02-15-060000.json                    │
-│  └─► PRD-started-vms-2026-02-15-060000.json                    │
+│  └─► PRE-started-vms-2026-02-15-060000.json (auto-deleted)     │
+│  └─► PRD-started-vms-2026-02-15-060000.json (auto-deleted)     │
 └─────────────────────────────────────────────────────────────────┘
-```
-
-## Quick Start
-
-### Prerequisites
-
-- Azure subscription with Contributor access
-- Azure CLI or Azure PowerShell installed
-- Storage account for state persistence
-
-### Deployment
-
-1. **Clone the repository**
-   ```powershell
-   git clone https://github.com/FallenHoot/azure-vm-maintenance-automation.git
-   cd azure-vm-maintenance-automation
-   ```
-
-2. **Update parameters** (optional)
-   
-   Edit [infra/main.bicepparam](infra/main.bicepparam) to customize:
-   - Storage account configuration
-   - Schedule times
-   - Time zone
-
-3. **Deploy using PowerShell**
-   ```powershell
-   # Option A: Separate runbooks (4 env-specific runbooks) - Default
-   .\scripts\Deploy-Automation.ps1 -ResourceGroupName "rg-automation" -Location "centralus"
-
-   # Option B: Combined runbooks (2 runbooks with -Environment parameter)
-   .\scripts\Deploy-Automation.ps1 -ResourceGroupName "rg-automation" -Location "centralus" -RunbookStyle "Combined"
-   ```
-
-4. **Or deploy using Azure CLI**
-   ```bash
-   az deployment group create \
-     --resource-group rg-automation \
-     --template-file infra/main.bicep \
-     --parameters infra/main.bicepparam
-   ```
-
-## Runbooks
-
-### Environment-Specific Runbooks
-
-| Runbook | Environment | Purpose | Default Filter |
-|---------|-------------|---------|----------------|
-| `PreMaintenance-PRE` | Pre-Production | Start deallocated VMs | Name contains `PRE` |
-| `PreMaintenance-PRD` | Production | Start deallocated VMs | Name contains `PRD` |
-| `PostMaintenance-PRE` | Pre-Production | Stop started VMs | Uses state file |
-| `PostMaintenance-PRD` | Production | Stop started VMs | Uses state file |
-
-### Combined Runbooks
-
-| Runbook | Required Param | Purpose |
-|---------|----------------|---------|
-| `PreMaintenance-Combined` | `-Environment PRE\|PRD` | Start deallocated VMs |
-| `PostMaintenance-Combined` | `-Environment PRE\|PRD` | Stop started VMs |
-
-### Parameters
-
-#### PreMaintenance Runbooks
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `Environment` | string | - | **Combined only**: `PRE` or `PRD` |
-| `StorageAccountName` | string | `patchingvmlist` | Storage account for state |
-| `StorageAccountRG` | string | `CAP-TST-01` | Storage account resource group |
-| `ContainerName` | string | `vm-maintenance` | Blob container name |
-| `FilterBy` | string | `Name` | Filter method: `Name` or `Tag` |
-| `NamePattern` | string | `PRE`/`PRD` | Regex pattern for VM names |
-| `TagName` | string | `env` | Tag key to filter by |
-| `TagValue` | string | `pre`/`prod` | Tag value to match |
-| `DryRun` | bool | `false` | Simulate without changes |
-
-#### PostMaintenance Runbooks
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `Environment` | string | - | **Combined only**: `PRE` or `PRD` |
-| `StorageAccountName` | string | `patchingvmlist` | Storage account for state |
-| `StorageAccountRG` | string | `CAP-TST-01` | Storage account resource group |
-| `ContainerName` | string | `vm-maintenance` | Blob container name |
-| `StateFileName` | string | `` | Specific state file (optional) |
-| `DeleteStateFile` | bool | `true` | Delete state file after processing |
-| `DryRun` | bool | `false` | Simulate without changes |
-
-## Pro Tips
-
-### 1. Use DryRun First
-
-Always test with DryRun before running in production:
-```powershell
-Start-AzAutomationRunbook -Name "PreMaintenance-PRE" `
-  -Parameters @{ DryRun = $true } `
-  -ResourceGroupName "rg-automation" `
-  -AutomationAccountName "aa-vm-maintenance"
-```
-
-### 2. Combine Filters with Tags
-
-Use tags for maximum flexibility:
-```powershell
-# Tag VMs that should NOT auto-start
-az vm update --ids <vm-id> --set tags.AutoStart=false
-
-# Then filter in runbook
--FilterBy "Tag" -TagName "AutoStart" -TagValue "true"
-```
-
-### 3. Staged Rollout with Start Order
-
-For VMs with dependencies (DB before App), use a StartOrder tag and run multiple times:
-```powershell
-# First wave - Infrastructure (Domain Controllers, DNS)
--FilterBy "Tag" -TagName "StartOrder" -TagValue "1"
-
-# Second wave - Databases
--FilterBy "Tag" -TagName "StartOrder" -TagValue "2"
-
-# Third wave - Application Servers
--FilterBy "Tag" -TagName "StartOrder" -TagValue "3"
-```
-
-### 4. Monitor with Log Analytics
-
-Query runbook results in Log Analytics:
-```kusto
-AzureDiagnostics
-| where ResourceProvider == "MICROSOFT.AUTOMATION"
-| where Category == "JobStreams"
-| where StreamType_s == "Output"
-| project TimeGenerated, ResultDescription
-| order by TimeGenerated desc
-```
-
-### 5. Exclude VMs Temporarily
-
-To exclude a VM from the next maintenance window:
-```powershell
-# Option A: Remove the matching tag
-az vm update --ids <vm-id> --remove tags.env
-
-# Option B: Add an exclusion tag and update filter
-az vm update --ids <vm-id> --set tags.MaintenanceExclude=true
-```
-
-### 6. Cost Optimization
-
-VMs are started with `-NoWait` and stopped with `-Force -NoWait` for parallel execution. This minimizes:
-- Runbook execution time (and costs)
-- Time VMs are running during maintenance
-
-## Role Assignments
-
-The Automation Account's Managed Identity requires these roles:
-
-| Role | Scope | Purpose |
-|------|-------|---------|
-| Virtual Machine Contributor | Subscription(s) with VMs | Start/Stop VMs |
-| Reader | Subscription(s) with VMs | List subscriptions and VMs |
-| Storage Blob Data Contributor | Storage account | Read/write state files |
-
-### Multi-Subscription Setup
-
-```powershell
-$principalId = "<Managed-Identity-Principal-ID>"
-$subscriptions = @("sub-id-1", "sub-id-2", "sub-id-3")
-
-foreach ($subId in $subscriptions) {
-    New-AzRoleAssignment `
-        -ObjectId $principalId `
-        -RoleDefinitionName "Virtual Machine Contributor" `
-        -Scope "/subscriptions/$subId"
-}
 ```
 
 ## File Structure
 
 ```
 ├── runbooks/
-│   ├── PreMaintenance-Combined.ps1   # Combined (requires -Environment)
-│   ├── PostMaintenance-Combined.ps1  # Combined (requires -Environment)
-│   ├── PreMaintenance-PRE.ps1        # PRE environment specific
-│   ├── PreMaintenance-PRD.ps1        # PRD environment specific
-│   ├── PostMaintenance-PRE.ps1       # PRE environment specific
-│   └── PostMaintenance-PRD.ps1       # PRD environment specific
+│   ├── PreMaintenance-PRE.ps1        # Edit defaults before deployment
+│   ├── PreMaintenance-PRD.ps1        # Edit defaults before deployment
+│   ├── PostMaintenance-PRE.ps1
+│   ├── PostMaintenance-PRD.ps1
+│   ├── PreMaintenance-Combined.ps1   # Alternative: single runbook
+│   └── PostMaintenance-Combined.ps1  # Alternative: single runbook
 ├── infra/
-│   ├── main.bicep                    # Automation Account infrastructure
-│   ├── main.bicepparam               # Parameter file
-│   └── role-assignments.bicep        # Role assignment template
+│   ├── main.bicep                    # Infrastructure as Code
+│   ├── main.bicepparam               # ← Edit this before deployment
+│   └── role-assignments.bicep
 ├── scripts/
-│   └── Deploy-Automation.ps1         # Deployment script
+│   └── Deploy-Automation.ps1
 └── README.md
-```
-
-## Schedule Configuration
-
-Schedules are configured for the **3rd Sunday of each month**:
-
-```bicep
-advancedSchedule: {
-  monthlyOccurrences: [
-    { occurrence: 3, day: 'Sunday' }
-  ]
-}
-```
-
-## Monitoring
-
-### View Job Status
-
-```powershell
-Get-AzAutomationJob -ResourceGroupName "rg-automation" `
-  -AutomationAccountName "aa-vm-maintenance" -RunbookName "PreMaintenance-PRE" | 
-  Select-Object Status, StartTime, EndTime | 
-  Sort-Object StartTime -Descending | Select-Object -First 10
-```
-
-### View Job Output
-
-```powershell
-$job = Get-AzAutomationJob -ResourceGroupName "rg-automation" `
-  -AutomationAccountName "aa-vm-maintenance" -RunbookName "PreMaintenance-PRE" | 
-  Sort-Object StartTime -Descending | Select-Object -First 1
-
-Get-AzAutomationJobOutput -ResourceGroupName "rg-automation" `
-  -AutomationAccountName "aa-vm-maintenance" -Id $job.JobId -Stream Output
 ```
 
 ## Troubleshooting
 
-| Issue | Solution |
-|-------|----------|
-| Storage account not found | Verify name/RG, ensure MI has Reader access |
-| Managed Identity connection failed | Enable System-Assigned MI, check role assignments |
-| No VMs match filter | Check NamePattern/Tag params, verify VMs are deallocated |
-| VMs not starting | Check MI has VM Contributor on target subscription |
+| Issue | Cause | Solution |
+|-------|-------|----------|
+| No VMs started | Filter doesn't match | Verify `NamePattern` or `TagName`/`TagValue` in runbook |
+| Storage account not found | Wrong name or no access | Check `StorageAccountName` and role assignments |
+| VMs not stopping | State file missing | Check storage container for state files |
+| Job failed | Managed Identity permissions | Assign VM Contributor to all target subscriptions |
 
-## Technical Notes
+## Technical Details
 
-Follows [Microsoft Azure Automation best practices](https://learn.microsoft.com/azure/automation/context-switching):
-
-- `Disable-AzContextAutosave -Scope Process` prevents context inheritance
-- `-DefaultProfile $AzureContext` on all Az cmdlets ensures consistent context
-- System-Assigned Managed Identity for secure authentication
-- `$ErrorActionPreference = "Stop"` for strict error handling
-- `-NoWait` for parallel VM operations
+- **PowerShell 7.2** runtime
+- **Managed Identity** authentication (no credentials)
+- **Parallel execution** with `-NoWait` for performance
+- **Idempotent** - safe to run multiple times
+- **Multi-subscription** - scans all enabled subscriptions
 
 **Required Az Modules**: `Az.Accounts`, `Az.Compute`, `Az.Storage`
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Submit a pull request
 
 ## License
 

@@ -18,6 +18,10 @@ param storageAccountRG string = 'CAP-TST-01'
 @description('Container name for VM state files')
 param containerName string = 'vm-maintenance'
 
+@description('Runbook deployment style: Separate (4 env-specific runbooks) or Combined (2 runbooks with Environment parameter)')
+@allowed(['Separate', 'Combined'])
+param runbookStyle string = 'Separate'
+
 @description('Start time for PRE environment Pre-Maintenance (before maintenance window)')
 param preMaintenanceTimePRE string = '06:00'
 
@@ -44,9 +48,8 @@ param tags object = {
 // Variables
 // ============================================================================
 
-// Calculate the next 3rd Sunday for initial schedule start
-// Note: Azure Automation schedules use monthlyOccurrence for monthly patterns
-var baseDate = '2026-02-15T${preMaintenanceTimePRE}:00Z' // Next occurrence
+var baseDate = '2026-02-15T${preMaintenanceTimePRE}:00Z'
+var useCombined = runbookStyle == 'Combined'
 
 // ============================================================================
 // Automation Account
@@ -71,7 +74,7 @@ resource automationAccount 'Microsoft.Automation/automationAccounts@2023-11-01' 
 }
 
 // ============================================================================
-// Automation Variables (for runbook configuration)
+// Automation Variables
 // ============================================================================
 
 resource varStorageAccountName 'Microsoft.Automation/automationAccounts/variables@2023-11-01' = {
@@ -105,59 +108,91 @@ resource varContainerName 'Microsoft.Automation/automationAccounts/variables@202
 }
 
 // ============================================================================
-// Runbooks - Placeholders (content uploaded separately via deployment script)
+// Runbooks - SEPARATE Style (4 environment-specific runbooks)
 // ============================================================================
 
-resource runbookPreMaintenancePRE 'Microsoft.Automation/automationAccounts/runbooks@2023-11-01' = {
+resource runbookPreMaintenancePRE 'Microsoft.Automation/automationAccounts/runbooks@2023-11-01' = if (!useCombined) {
   parent: automationAccount
   name: 'PreMaintenance-PRE'
   location: location
   tags: tags
   properties: {
     runbookType: 'PowerShell72'
-    description: 'Pre-Maintenance runbook for PRE (Pre-Production) environment. Starts deallocated VMs before maintenance window.'
+    description: 'Pre-Maintenance runbook for PRE environment. Starts deallocated VMs.'
     logProgress: true
     logVerbose: true
     logActivityTrace: 0
   }
 }
 
-resource runbookPreMaintenancePRD 'Microsoft.Automation/automationAccounts/runbooks@2023-11-01' = {
+resource runbookPreMaintenancePRD 'Microsoft.Automation/automationAccounts/runbooks@2023-11-01' = if (!useCombined) {
   parent: automationAccount
   name: 'PreMaintenance-PRD'
   location: location
   tags: tags
   properties: {
     runbookType: 'PowerShell72'
-    description: 'Pre-Maintenance runbook for PRD (Production) environment. Starts deallocated VMs before maintenance window.'
+    description: 'Pre-Maintenance runbook for PRD environment. Starts deallocated VMs.'
     logProgress: true
     logVerbose: true
     logActivityTrace: 0
   }
 }
 
-resource runbookPostMaintenancePRE 'Microsoft.Automation/automationAccounts/runbooks@2023-11-01' = {
+resource runbookPostMaintenancePRE 'Microsoft.Automation/automationAccounts/runbooks@2023-11-01' = if (!useCombined) {
   parent: automationAccount
   name: 'PostMaintenance-PRE'
   location: location
   tags: tags
   properties: {
     runbookType: 'PowerShell72'
-    description: 'Post-Maintenance runbook for PRE environment. Stops VMs that were started for maintenance.'
+    description: 'Post-Maintenance runbook for PRE environment. Stops started VMs.'
     logProgress: true
     logVerbose: true
     logActivityTrace: 0
   }
 }
 
-resource runbookPostMaintenancePRD 'Microsoft.Automation/automationAccounts/runbooks@2023-11-01' = {
+resource runbookPostMaintenancePRD 'Microsoft.Automation/automationAccounts/runbooks@2023-11-01' = if (!useCombined) {
   parent: automationAccount
   name: 'PostMaintenance-PRD'
   location: location
   tags: tags
   properties: {
     runbookType: 'PowerShell72'
-    description: 'Post-Maintenance runbook for PRD environment. Stops VMs that were started for maintenance.'
+    description: 'Post-Maintenance runbook for PRD environment. Stops started VMs.'
+    logProgress: true
+    logVerbose: true
+    logActivityTrace: 0
+  }
+}
+
+// ============================================================================
+// Runbooks - COMBINED Style (2 runbooks with Environment parameter)
+// ============================================================================
+
+resource runbookPreMaintenanceCombined 'Microsoft.Automation/automationAccounts/runbooks@2023-11-01' = if (useCombined) {
+  parent: automationAccount
+  name: 'PreMaintenance-Combined'
+  location: location
+  tags: tags
+  properties: {
+    runbookType: 'PowerShell72'
+    description: 'Pre-Maintenance runbook (Combined). Starts deallocated VMs. Requires -Environment parameter.'
+    logProgress: true
+    logVerbose: true
+    logActivityTrace: 0
+  }
+}
+
+resource runbookPostMaintenanceCombined 'Microsoft.Automation/automationAccounts/runbooks@2023-11-01' = if (useCombined) {
+  parent: automationAccount
+  name: 'PostMaintenance-Combined'
+  location: location
+  tags: tags
+  properties: {
+    runbookType: 'PowerShell72'
+    description: 'Post-Maintenance runbook (Combined). Stops started VMs. Requires -Environment parameter.'
     logProgress: true
     logVerbose: true
     logActivityTrace: 0
@@ -168,104 +203,84 @@ resource runbookPostMaintenancePRD 'Microsoft.Automation/automationAccounts/runb
 // Schedules - 3rd Sunday of Each Month
 // ============================================================================
 
-// PRE Environment - Pre-Maintenance Schedule (3rd Sunday, before maintenance)
 resource schedulePreMaintenancePRE 'Microsoft.Automation/automationAccounts/schedules@2023-11-01' = {
   parent: automationAccount
   name: 'Schedule-PreMaintenance-PRE'
   properties: {
-    description: 'PRE Environment: Runs on 3rd Sunday of each month before maintenance window'
+    description: 'PRE Environment: 3rd Sunday before maintenance window'
     startTime: baseDate
     frequency: 'Month'
     interval: 1
     timeZone: timeZone
     advancedSchedule: {
       monthlyOccurrences: [
-        {
-          occurrence: 3  // 3rd occurrence
-          day: 'Sunday'
-        }
+        { occurrence: 3, day: 'Sunday' }
       ]
     }
   }
 }
 
-// PRD Environment - Pre-Maintenance Schedule (3rd Sunday, before maintenance)
 resource schedulePreMaintenancePRD 'Microsoft.Automation/automationAccounts/schedules@2023-11-01' = {
   parent: automationAccount
   name: 'Schedule-PreMaintenance-PRD'
   properties: {
-    description: 'PRD Environment: Runs on 3rd Sunday of each month before maintenance window'
+    description: 'PRD Environment: 3rd Sunday before maintenance window'
     startTime: '2026-02-15T${preMaintenanceTimePRD}:00Z'
     frequency: 'Month'
     interval: 1
     timeZone: timeZone
     advancedSchedule: {
       monthlyOccurrences: [
-        {
-          occurrence: 3
-          day: 'Sunday'
-        }
+        { occurrence: 3, day: 'Sunday' }
       ]
     }
   }
 }
 
-// PRE Environment - Post-Maintenance Schedule (3rd Sunday, after maintenance)
 resource schedulePostMaintenancePRE 'Microsoft.Automation/automationAccounts/schedules@2023-11-01' = {
   parent: automationAccount
   name: 'Schedule-PostMaintenance-PRE'
   properties: {
-    description: 'PRE Environment: Runs on 3rd Sunday of each month after maintenance window'
+    description: 'PRE Environment: 3rd Sunday after maintenance window'
     startTime: '2026-02-15T${postMaintenanceTimePRE}:00Z'
     frequency: 'Month'
     interval: 1
     timeZone: timeZone
     advancedSchedule: {
       monthlyOccurrences: [
-        {
-          occurrence: 3
-          day: 'Sunday'
-        }
+        { occurrence: 3, day: 'Sunday' }
       ]
     }
   }
 }
 
-// PRD Environment - Post-Maintenance Schedule (3rd Sunday, after maintenance)
 resource schedulePostMaintenancePRD 'Microsoft.Automation/automationAccounts/schedules@2023-11-01' = {
   parent: automationAccount
   name: 'Schedule-PostMaintenance-PRD'
   properties: {
-    description: 'PRD Environment: Runs on 3rd Sunday of each month after maintenance window'
+    description: 'PRD Environment: 3rd Sunday after maintenance window'
     startTime: '2026-02-15T${postMaintenanceTimePRD}:00Z'
     frequency: 'Month'
     interval: 1
     timeZone: timeZone
     advancedSchedule: {
       monthlyOccurrences: [
-        {
-          occurrence: 3
-          day: 'Sunday'
-        }
+        { occurrence: 3, day: 'Sunday' }
       ]
     }
   }
 }
 
 // ============================================================================
-// Job Schedules - Link Runbooks to Schedules
+// Job Schedules - SEPARATE Style
 // ============================================================================
 
-resource jobSchedulePreMaintenancePRE 'Microsoft.Automation/automationAccounts/jobSchedules@2023-11-01' = {
+resource jobSchedulePreMaintenancePRE 'Microsoft.Automation/automationAccounts/jobSchedules@2023-11-01' = if (!useCombined) {
   parent: automationAccount
-  name: guid(automationAccount.id, runbookPreMaintenancePRE.name, schedulePreMaintenancePRE.name)
+  name: guid(automationAccount.id, 'PreMaintenance-PRE', schedulePreMaintenancePRE.name)
   properties: {
-    runbook: {
-      name: runbookPreMaintenancePRE.name
-    }
-    schedule: {
-      name: schedulePreMaintenancePRE.name
-    }
+    runbook: { name: 'PreMaintenance-PRE' }
+    schedule: { name: schedulePreMaintenancePRE.name }
     parameters: {
       StorageAccountName: storageAccountName
       StorageAccountRG: storageAccountRG
@@ -275,16 +290,12 @@ resource jobSchedulePreMaintenancePRE 'Microsoft.Automation/automationAccounts/j
   }
 }
 
-resource jobSchedulePreMaintenancePRD 'Microsoft.Automation/automationAccounts/jobSchedules@2023-11-01' = {
+resource jobSchedulePreMaintenancePRD 'Microsoft.Automation/automationAccounts/jobSchedules@2023-11-01' = if (!useCombined) {
   parent: automationAccount
-  name: guid(automationAccount.id, runbookPreMaintenancePRD.name, schedulePreMaintenancePRD.name)
+  name: guid(automationAccount.id, 'PreMaintenance-PRD', schedulePreMaintenancePRD.name)
   properties: {
-    runbook: {
-      name: runbookPreMaintenancePRD.name
-    }
-    schedule: {
-      name: schedulePreMaintenancePRD.name
-    }
+    runbook: { name: 'PreMaintenance-PRD' }
+    schedule: { name: schedulePreMaintenancePRD.name }
     parameters: {
       StorageAccountName: storageAccountName
       StorageAccountRG: storageAccountRG
@@ -294,16 +305,12 @@ resource jobSchedulePreMaintenancePRD 'Microsoft.Automation/automationAccounts/j
   }
 }
 
-resource jobSchedulePostMaintenancePRE 'Microsoft.Automation/automationAccounts/jobSchedules@2023-11-01' = {
+resource jobSchedulePostMaintenancePRE 'Microsoft.Automation/automationAccounts/jobSchedules@2023-11-01' = if (!useCombined) {
   parent: automationAccount
-  name: guid(automationAccount.id, runbookPostMaintenancePRE.name, schedulePostMaintenancePRE.name)
+  name: guid(automationAccount.id, 'PostMaintenance-PRE', schedulePostMaintenancePRE.name)
   properties: {
-    runbook: {
-      name: runbookPostMaintenancePRE.name
-    }
-    schedule: {
-      name: schedulePostMaintenancePRE.name
-    }
+    runbook: { name: 'PostMaintenance-PRE' }
+    schedule: { name: schedulePostMaintenancePRE.name }
     parameters: {
       StorageAccountName: storageAccountName
       StorageAccountRG: storageAccountRG
@@ -314,17 +321,83 @@ resource jobSchedulePostMaintenancePRE 'Microsoft.Automation/automationAccounts/
   }
 }
 
-resource jobSchedulePostMaintenancePRD 'Microsoft.Automation/automationAccounts/jobSchedules@2023-11-01' = {
+resource jobSchedulePostMaintenancePRD 'Microsoft.Automation/automationAccounts/jobSchedules@2023-11-01' = if (!useCombined) {
   parent: automationAccount
-  name: guid(automationAccount.id, runbookPostMaintenancePRD.name, schedulePostMaintenancePRD.name)
+  name: guid(automationAccount.id, 'PostMaintenance-PRD', schedulePostMaintenancePRD.name)
   properties: {
-    runbook: {
-      name: runbookPostMaintenancePRD.name
-    }
-    schedule: {
-      name: schedulePostMaintenancePRD.name
-    }
+    runbook: { name: 'PostMaintenance-PRD' }
+    schedule: { name: schedulePostMaintenancePRD.name }
     parameters: {
+      StorageAccountName: storageAccountName
+      StorageAccountRG: storageAccountRG
+      ContainerName: containerName
+      DeleteStateFile: 'true'
+      DryRun: 'false'
+    }
+  }
+}
+
+// ============================================================================
+// Job Schedules - COMBINED Style
+// ============================================================================
+
+resource jobSchedulePreCombinedPRE 'Microsoft.Automation/automationAccounts/jobSchedules@2023-11-01' = if (useCombined) {
+  parent: automationAccount
+  name: guid(automationAccount.id, 'PreMaintenance-Combined-PRE', schedulePreMaintenancePRE.name)
+  properties: {
+    runbook: { name: 'PreMaintenance-Combined' }
+    schedule: { name: schedulePreMaintenancePRE.name }
+    parameters: {
+      Environment: 'PRE'
+      StorageAccountName: storageAccountName
+      StorageAccountRG: storageAccountRG
+      ContainerName: containerName
+      DryRun: 'false'
+    }
+  }
+}
+
+resource jobSchedulePreCombinedPRD 'Microsoft.Automation/automationAccounts/jobSchedules@2023-11-01' = if (useCombined) {
+  parent: automationAccount
+  name: guid(automationAccount.id, 'PreMaintenance-Combined-PRD', schedulePreMaintenancePRD.name)
+  properties: {
+    runbook: { name: 'PreMaintenance-Combined' }
+    schedule: { name: schedulePreMaintenancePRD.name }
+    parameters: {
+      Environment: 'PRD'
+      StorageAccountName: storageAccountName
+      StorageAccountRG: storageAccountRG
+      ContainerName: containerName
+      DryRun: 'false'
+    }
+  }
+}
+
+resource jobSchedulePostCombinedPRE 'Microsoft.Automation/automationAccounts/jobSchedules@2023-11-01' = if (useCombined) {
+  parent: automationAccount
+  name: guid(automationAccount.id, 'PostMaintenance-Combined-PRE', schedulePostMaintenancePRE.name)
+  properties: {
+    runbook: { name: 'PostMaintenance-Combined' }
+    schedule: { name: schedulePostMaintenancePRE.name }
+    parameters: {
+      Environment: 'PRE'
+      StorageAccountName: storageAccountName
+      StorageAccountRG: storageAccountRG
+      ContainerName: containerName
+      DeleteStateFile: 'true'
+      DryRun: 'false'
+    }
+  }
+}
+
+resource jobSchedulePostCombinedPRD 'Microsoft.Automation/automationAccounts/jobSchedules@2023-11-01' = if (useCombined) {
+  parent: automationAccount
+  name: guid(automationAccount.id, 'PostMaintenance-Combined-PRD', schedulePostMaintenancePRD.name)
+  properties: {
+    runbook: { name: 'PostMaintenance-Combined' }
+    schedule: { name: schedulePostMaintenancePRD.name }
+    parameters: {
+      Environment: 'PRD'
       StorageAccountName: storageAccountName
       StorageAccountRG: storageAccountRG
       ContainerName: containerName
@@ -350,12 +423,18 @@ output managedIdentityPrincipalId string = automationAccount.identity.principalI
 @description('Managed Identity Tenant ID')
 output managedIdentityTenantId string = automationAccount.identity.tenantId
 
-@description('Runbook names')
-output runbookNames array = [
-  runbookPreMaintenancePRE.name
-  runbookPreMaintenancePRD.name
-  runbookPostMaintenancePRE.name
-  runbookPostMaintenancePRD.name
+@description('Runbook style deployed')
+output runbookStyle string = runbookStyle
+
+@description('Runbook names deployed')
+output runbookNames array = useCombined ? [
+  'PreMaintenance-Combined'
+  'PostMaintenance-Combined'
+] : [
+  'PreMaintenance-PRE'
+  'PreMaintenance-PRD'
+  'PostMaintenance-PRE'
+  'PostMaintenance-PRD'
 ]
 
 @description('Schedule names')

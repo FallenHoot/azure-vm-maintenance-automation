@@ -88,9 +88,9 @@ Uses Azure resource tags for flexible grouping. Ideal for complex environments.
 │  │   PreMaintenance-PRE   │   PostMaintenance-PRE        │    │
 │  │   PreMaintenance-PRD   │   PostMaintenance-PRD        │    │
 │  ├────────────────────────────────────────────────────────┤    │
-│  │ Option B: Unified Runbooks with Environment Parameter  │    │
-│  │   PreMaintenance -Environment PRE|PRD                 │    │
-│  │   PostMaintenance -Environment PRE|PRD                │    │
+│  │ Option B: Combined Runbooks with Environment Parameter │    │
+│  │   PreMaintenance-Combined -Environment PRE|PRD        │    │
+│  │   PostMaintenance-Combined -Environment PRE|PRD       │    │
 │  └────────────────────────────────────────────────────────┘    │
 │                                                                  │
 │  Schedules: 3rd Sunday each month                               │
@@ -136,7 +136,11 @@ Uses Azure resource tags for flexible grouping. Ideal for complex environments.
 
 3. **Deploy using PowerShell**
    ```powershell
+   # Option A: Separate runbooks (4 env-specific runbooks) - Default
    .\scripts\Deploy-Automation.ps1 -ResourceGroupName "rg-automation" -Location "centralus"
+
+   # Option B: Combined runbooks (2 runbooks with -Environment parameter)
+   .\scripts\Deploy-Automation.ps1 -ResourceGroupName "rg-automation" -Location "centralus" -RunbookStyle "Combined"
    ```
 
 4. **Or deploy using Azure CLI**
@@ -158,12 +162,12 @@ Uses Azure resource tags for flexible grouping. Ideal for complex environments.
 | `PostMaintenance-PRE` | Pre-Production | Stop started VMs | Uses state file |
 | `PostMaintenance-PRD` | Production | Stop started VMs | Uses state file |
 
-### Unified Runbooks
+### Combined Runbooks
 
 | Runbook | Required Param | Purpose |
 |---------|----------------|---------|
-| `PreMaintenance` | `-Environment PRE\|PRD` | Start deallocated VMs |
-| `PostMaintenance` | `-Environment PRE\|PRD` | Stop started VMs |
+| `PreMaintenance-Combined` | `-Environment PRE\|PRD` | Start deallocated VMs |
+| `PostMaintenance-Combined` | `-Environment PRE\|PRD` | Stop started VMs |
 
 ### Parameters
 
@@ -171,7 +175,7 @@ Uses Azure resource tags for flexible grouping. Ideal for complex environments.
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `Environment` | string | - | **Unified only**: `PRE` or `PRD` |
+| `Environment` | string | - | **Combined only**: `PRE` or `PRD` |
 | `StorageAccountName` | string | `patchingvmlist` | Storage account for state |
 | `StorageAccountRG` | string | `CAP-TST-01` | Storage account resource group |
 | `ContainerName` | string | `vm-maintenance` | Blob container name |
@@ -185,7 +189,7 @@ Uses Azure resource tags for flexible grouping. Ideal for complex environments.
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `Environment` | string | - | **Unified only**: `PRE` or `PRD` |
+| `Environment` | string | - | **Combined only**: `PRE` or `PRD` |
 | `StorageAccountName` | string | `patchingvmlist` | Storage account for state |
 | `StorageAccountRG` | string | `CAP-TST-01` | Storage account resource group |
 | `ContainerName` | string | `vm-maintenance` | Blob container name |
@@ -287,18 +291,18 @@ foreach ($subId in $subscriptions) {
 
 ```
 ├── runbooks/
-│   ├── PreMaintenance.ps1        # Unified (requires -Environment)
-│   ├── PostMaintenance.ps1       # Unified (requires -Environment)
-│   ├── PreMaintenance-PRE.ps1    # PRE environment specific
-│   ├── PreMaintenance-PRD.ps1    # PRD environment specific
-│   ├── PostMaintenance-PRE.ps1   # PRE environment specific
-│   └── PostMaintenance-PRD.ps1   # PRD environment specific
+│   ├── PreMaintenance-Combined.ps1   # Combined (requires -Environment)
+│   ├── PostMaintenance-Combined.ps1  # Combined (requires -Environment)
+│   ├── PreMaintenance-PRE.ps1        # PRE environment specific
+│   ├── PreMaintenance-PRD.ps1        # PRD environment specific
+│   ├── PostMaintenance-PRE.ps1       # PRE environment specific
+│   └── PostMaintenance-PRD.ps1       # PRD environment specific
 ├── infra/
-│   ├── main.bicep                # Automation Account infrastructure
-│   ├── main.bicepparam           # Parameter file
-│   └── role-assignments.bicep    # Role assignment template
+│   ├── main.bicep                    # Automation Account infrastructure
+│   ├── main.bicepparam               # Parameter file
+│   └── role-assignments.bicep        # Role assignment template
 ├── scripts/
-│   └── Deploy-Automation.ps1     # Deployment script
+│   └── Deploy-Automation.ps1         # Deployment script
 └── README.md
 ```
 

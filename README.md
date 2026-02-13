@@ -183,7 +183,6 @@ foreach ($subId in $subscriptions) {
 ## File Structure
 
 ```
-azure-vm-maintenance/
 ├── runbooks/
 │   ├── PreMaintenance-PRE.ps1    # PRE environment pre-maintenance
 │   ├── PreMaintenance-PRD.ps1    # PRD environment pre-maintenance

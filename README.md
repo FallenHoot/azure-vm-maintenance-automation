@@ -260,6 +260,35 @@ Or enable diagnostic settings to send logs to Log Analytics for long-term monito
 
 **Required Az Modules**: `Az.Accounts`, `Az.Compute`, `Az.Storage`
 
+## Potential Enhancements
+
+These are not implemented but could be added for specific customer needs:
+
+### Sequenced Startup (Start Order)
+
+For environments with dependencies (e.g., database must start before app servers), you could implement staged startup using tags:
+
+**Concept:**
+1. Tag VMs with `StartOrder`: `1`, `2`, `3`
+2. Create separate schedules for each wave with time delays
+3. Wave 1 (06:00): Infrastructure - Domain Controllers, DNS
+4. Wave 2 (06:15): Data tier - Databases, file servers  
+5. Wave 3 (06:30): Application tier - Web servers, app servers
+
+**Implementation approach:**
+- Create 3 PreMaintenance runbooks (or use Combined with different parameters)
+- Each filters by `StartOrder` tag value
+- Schedule them 15 minutes apart
+
+### Other Ideas
+
+| Enhancement | Description |
+|-------------|-------------|
+| Email notifications | Add Logic App or SendGrid to notify on completion/failure |
+| Teams alerts | Post job status to Teams channel via webhook |
+| Cost tracking | Log VM runtime hours to estimate savings |
+| Exclusion tag | Add `MaintenanceExclude=true` tag check to skip specific VMs |
+
 ## License
 
 MIT License

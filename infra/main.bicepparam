@@ -19,14 +19,18 @@ param storageAccountName = 'patchingvmlist'
 param storageAccountRG = 'CAP-TST-01'
 param containerName = 'vm-maintenance'
 
-// Schedule times (24-hour format, UTC)
+// Schedule times (24-hour format, in the time zone specified below)
+// These are interpreted in the timeZone below - NOT UTC
 // Adjust based on your maintenance window
-param preMaintenanceTimePRE = '06:00'   // 6:00 AM - Start VMs before maintenance
-param preMaintenanceTimePRD = '06:00'   // 6:00 AM - Start VMs before maintenance
-param postMaintenanceTimePRE = '22:00'  // 10:00 PM - Stop VMs after maintenance
-param postMaintenanceTimePRD = '22:00'  // 10:00 PM - Stop VMs after maintenance
+param preMaintenanceTimePRE = '06:00'   // 6:00 AM local - Start VMs before maintenance
+param preMaintenanceTimePRD = '06:00'   // 6:00 AM local - Start VMs before maintenance
+param postMaintenanceTimePRE = '22:00'  // 10:00 PM local - Stop VMs after maintenance
+param postMaintenanceTimePRD = '22:00'  // 10:00 PM local - Stop VMs after maintenance
 
-// Time zone for schedules
+// IANA time zone for all schedules
+// The schedule times above are interpreted in this time zone
+// Azure handles DST adjustments automatically
+// Common values: 'America/Chicago', 'America/New_York', 'America/Los_Angeles', 'Europe/London', 'Etc/UTC'
 param timeZone = 'America/Chicago'
 
 // Resource tags
@@ -35,5 +39,5 @@ param tags = {
   Purpose: 'VM-Maintenance-Automation'
   Owner: 'Infrastructure-Team'
   CostCenter: 'IT-Operations'
-  ManagedBy: 'Bicep'
+  ManagedBy: 'Bicep-AVM'
 }

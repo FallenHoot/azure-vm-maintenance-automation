@@ -156,12 +156,14 @@ foreach ($subId in $subscriptionIds) {
 Edit [infra/main.bicepparam](infra/main.bicepparam):
 
 ```bicep
-param preMaintenanceTimePRE = '06:00'
-param postMaintenanceTimePRE = '22:00'
+param preMaintenanceTimePRE = '06:00'   // 6 AM in your time zone
+param postMaintenanceTimePRE = '22:00'  // 10 PM in your time zone
 param preMaintenanceTimePRD = '06:00'
 param postMaintenanceTimePRD = '22:00'
-param timeZone = 'America/Chicago'
+param timeZone = 'America/Chicago'      // IANA time zone
 ```
+
+> **Time Zone Note:** Schedule times are interpreted in the `timeZone` you specify (IANA format). Azure handles daylight saving adjustments automatically. Common values: `America/Chicago`, `America/New_York`, `America/Los_Angeles`, `Europe/London`, `Etc/UTC`. Do **not** use UTC unless your ops team thinks in UTC — your 6:00 AM start would shift relative to local business hours across DST changes.
 
 ## VM Filtering
 
@@ -193,11 +195,13 @@ Common tag strategies:
 
 ## Architecture
 
+Infrastructure is deployed using [Azure Verified Modules (AVM)](https://azure.github.io/Azure-Verified-Modules/) via `br/public:avm/res/automation/automation-account:0.17.1`.
+
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    Azure Automation Account                      │
+│              Azure Automation Account (AVM)                      │
 ├─────────────────────────────────────────────────────────────────┤
-│  Runbooks (style-dependent):      Schedules:                    │
+│  Runbooks (style-dependent):      Schedules (local time zone):  │
 │  ┌──────────────────────┐        ┌──────────────────────────┐  │
 │  │ PreMaintenance-PRE   │◄───────│ 3rd Sunday 06:00         │  │
 │  │ PreMaintenance-PRD   │◄───────│ 3rd Sunday 06:00         │  │
@@ -231,7 +235,7 @@ Common tag strategies:
 │   ├── PreMaintenance-Combined.ps1         # Combined style
 │   └── PostMaintenance-Combined.ps1        # Combined style
 ├── infra/
-│   ├── main.bicep                          # Infrastructure as Code
+│   ├── main.bicep                          # Infrastructure as Code (AVM)
 │   ├── main.bicepparam                     # Deployment parameters
 │   └── role-assignments.bicep              # Role assignment template
 ├── scripts/

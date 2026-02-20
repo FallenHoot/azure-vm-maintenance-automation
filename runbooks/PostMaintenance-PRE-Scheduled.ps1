@@ -4,7 +4,12 @@
 .DESCRIPTION
     Zero-touch runbook - all configuration is hardcoded below. Edit values before deployment.
     Runs on schedule without any manual input. Reads state file from PreMaintenance run.
+    Pass -DryRun $true to preview what VMs would be stopped without making changes.
 #>
+
+param (
+    [bool]$DryRun = $false
+)
 
 # ============================================================================
 # CONFIGURATION - Edit these values before deployment (must match PreMaintenance)
@@ -13,8 +18,10 @@ $Environment = "PRE"
 $StorageAccountName = "patchingvmlist"
 $StorageAccountRG = "CAP-TST-01"
 $ContainerName = "vm-maintenance"
-$DeleteStateFile = $true
+$DeleteStateFile = $false
 # ============================================================================
+
+if ($DryRun) { Write-Output "[DRY RUN] Mode enabled - no VMs will be stopped, state file preserved" }
 
 $ErrorActionPreference = "Stop"
 $null = Disable-AzContextAutosave -Scope Process
@@ -110,8 +117,12 @@ foreach ($vm in $startedVMs) {
             continue
         }
 
-        Stop-AzVM -Name $vm.VMName -ResourceGroupName $currentVM.ResourceGroupName -Force -NoWait -DefaultProfile $AzureContext | Out-Null
-        Write-Output "Stopping: $($vm.VMName)"
+        if ($DryRun) {
+            Write-Output "[DRY RUN] Would stop: $($vm.VMName)"
+        } else {
+            Stop-AzVM -Name $vm.VMName -ResourceGroupName $currentVM.ResourceGroupName -Force -NoWait -DefaultProfile $AzureContext | Out-Null
+            Write-Output "Stopping: $($vm.VMName)"
+        }
         $stoppedCount++
     } catch {
         Write-Warning "Failed: $($vm.VMName) - $($_.Exception.Message)"
@@ -120,9 +131,10 @@ foreach ($vm in $startedVMs) {
 }
 
 # Clean up state file
-if ($DeleteStateFile) {
+if ($DeleteStateFile -and -not $DryRun) {
     Remove-AzStorageBlob -Container $ContainerName -Blob $blob.Name -Context $ctx -DefaultProfile $AzureContext -Force
     Write-Output "State file deleted"
 }
 
-Write-Output "=== SUMMARY: $Environment | Stopped: $stoppedCount | Skipped: $skippedCount | Failed: $failedCount ==="
+$prefix = if ($DryRun) { "[DRY RUN] " } else { "" }
+Write-Output "=== ${prefix}SUMMARY: $Environment | Stopped: $stoppedCount | Skipped: $skippedCount | Failed: $failedCount ==="

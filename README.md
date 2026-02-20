@@ -66,8 +66,8 @@ $TagValue = "pre"
 Edit all 4 scheduled runbook files:
 - `PreMaintenance-PRE-Scheduled.ps1` — PRE environment
 - `PreMaintenance-PRD-Scheduled.ps1` — PRD environment
-- `PostMaintenance-PRE-Scheduled.ps1` — Must match Pre storage settings
-- `PostMaintenance-PRD-Scheduled.ps1` — Must match Pre storage settings
+- `PostMaintenance-PRE-Scheduled.ps1` — Must match Pre storage settings (`$DeleteStateFile = $false` by default)
+- `PostMaintenance-PRD-Scheduled.ps1` — Must match Pre storage settings (`$DeleteStateFile = $false` by default)
 
 ### Step 2: Deploy
 
@@ -78,33 +78,28 @@ Edit all 4 scheduled runbook files:
 ### Step 3: Test and Done
 
 1. Go to Automation Account → Runbooks → PreMaintenance-PRE → Start
-2. Review output, verify correct VMs targeted
-3. Run PostMaintenance-PRE to stop them
-4. Runbooks now execute automatically on the 3rd Sunday. No further action needed.
+2. Pass `-DryRun $true` to preview which VMs would be targeted without making changes
+3. Review output, verify correct VMs targeted
+4. Run again without DryRun, then run PostMaintenance-PRE to stop them
+5. Runbooks now execute automatically on the 3rd Sunday. No further action needed.
+
+> **DryRun mode:** All Scheduled runbooks accept `-DryRun $true`. In DryRun mode, PreMaintenance logs which VMs _would_ be started (no state file saved). PostMaintenance logs which VMs _would_ be stopped (state file preserved). Defaults to `$false` — scheduled runs are fully automatic.
 
 ---
 
 ## Option B: Separate (Parameterized)
 
-**4 individual runbooks with `param()` blocks.** Storage config passed via Bicep job schedules or overridden at runtime.
+**4 individual runbooks with `param()` blocks.** Storage config defaults are in the scripts; override at runtime or via job schedules.
 
-### Step 1: Edit Bicep Parameters
+### Step 1: Deploy
 
-Edit [infra/main.bicepparam](infra/main.bicepparam):
-
-```bicep
-param runbookStyle = 'Separate'
-param storageAccountName = 'yourstorageaccount'
-param storageAccountRG = 'your-storage-rg'
-```
-
-### Step 2: Deploy
+The deploy script uploads the parameterized runbook files and uses the same Bicep infrastructure:
 
 ```powershell
 .\scripts\Deploy-Automation.ps1 -ResourceGroupName "rg-automation" -Location "centralus" -RunbookStyle "Separate"
 ```
 
-### Step 3: Customize (Optional)
+### Step 2: Customize (Optional)
 
 You can override parameters when running manually:
 ```powershell
@@ -119,15 +114,7 @@ Start-AzAutomationRunbook -Name "PreMaintenance-PRE" `
 
 **2 runbooks handle both PRE and PRD** via the `-Environment` parameter. Fewer runbooks to manage.
 
-### Step 1: Edit Bicep Parameters
-
-```bicep
-param runbookStyle = 'Combined'
-param storageAccountName = 'yourstorageaccount'
-param storageAccountRG = 'your-storage-rg'
-```
-
-### Step 2: Deploy
+### Deploy
 
 ```powershell
 .\scripts\Deploy-Automation.ps1 -ResourceGroupName "rg-automation" -Location "centralus" -RunbookStyle "Combined"
@@ -195,7 +182,7 @@ Common tag strategies:
 
 ## Architecture
 
-Infrastructure is deployed using [Azure Verified Modules (AVM)](https://azure.github.io/Azure-Verified-Modules/) via `br/public:avm/res/automation/automation-account:0.17.1`.
+Infrastructure is deployed using [Azure Verified Modules (AVM)](https://azure.github.io/Azure-Verified-Modules/) via `br/public:avm/res/automation/automation-account:0.17.1`. The Bicep template deploys the zero-touch (Scheduled) style — runbook shells, schedules, and job schedules. The deploy script (`Deploy-Automation.ps1`) handles which runbook files are uploaded based on the `-RunbookStyle` parameter.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐

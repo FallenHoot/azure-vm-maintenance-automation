@@ -11,14 +11,6 @@ param location = 'centralus'
 // Automation Account name
 param automationAccountName = 'aa-vm-maintenance'
 
-// Runbook style: 'Scheduled' (zero-touch), 'Separate' (4 with params), 'Combined' (2 with -Environment)
-param runbookStyle = 'Scheduled'
-
-// Storage configuration (used by Separate and Combined styles for job schedule parameters)
-param storageAccountName = 'patchingvmlist'
-param storageAccountRG = 'CAP-TST-01'
-param containerName = 'vm-maintenance'
-
 // Schedule times (24-hour format, in the time zone specified below)
 // These are interpreted in the timeZone below - NOT UTC
 // Adjust based on your maintenance window

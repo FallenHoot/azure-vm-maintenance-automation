@@ -85,7 +85,6 @@ $deploymentParams = @{
     ResourceGroupName = $ResourceGroupName
     TemplateFile      = $bicepFile
     Name              = $deploymentName
-    runbookStyle      = $RunbookStyle
 }
 
 if (Test-Path $paramFile) {

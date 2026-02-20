@@ -4,7 +4,12 @@
 .DESCRIPTION
     Zero-touch runbook - all configuration is hardcoded below. Edit values before deployment.
     Runs on schedule without any manual input.
+    Pass -DryRun $true to preview what VMs would be started without making changes.
 #>
+
+param (
+    [bool]$DryRun = $false
+)
 
 # ============================================================================
 # CONFIGURATION - Edit these values before deployment
@@ -24,6 +29,8 @@ $NamePattern = "PRD"
 $TagName = "env"
 $TagValue = "prod"
 # ============================================================================
+
+if ($DryRun) { Write-Output "[DRY RUN] Mode enabled - no VMs will be started, no state file saved" }
 
 $ErrorActionPreference = "Stop"
 $null = Disable-AzContextAutosave -Scope Process
@@ -86,8 +93,12 @@ $failedVMs = @()
 foreach ($vm in $filteredVMs) {
     try {
         Set-AzContext -SubscriptionId $vm.SubscriptionId -DefaultProfile $AzureContext | Out-Null
-        Start-AzVM -Name $vm.Name -ResourceGroupName $vm.ResourceGroup -NoWait -DefaultProfile $AzureContext | Out-Null
-        Write-Output "Starting: $($vm.Name)"
+        if ($DryRun) {
+            Write-Output "[DRY RUN] Would start: $($vm.Name) in $($vm.ResourceGroup)"
+        } else {
+            Start-AzVM -Name $vm.Name -ResourceGroupName $vm.ResourceGroup -NoWait -DefaultProfile $AzureContext | Out-Null
+            Write-Output "Starting: $($vm.Name)"
+        }
         $startedVMs += @{
             SubscriptionName = $vm.SubscriptionName
             VMName = $vm.Name
@@ -106,7 +117,13 @@ foreach ($vm in $filteredVMs) {
     }
 }
 
-# Save state to blob storage
+# Save state to blob storage (skip in DryRun mode)
+if ($DryRun) {
+    Write-Output "[DRY RUN] Skipping state file save"
+    Write-Output "=== [DRY RUN] SUMMARY: $Environment | Would start: $($startedVMs.Count) | Failed: $($failedVMs.Count) ==="
+    return
+}
+
 $storageAccount = $null
 foreach ($sub in $subscriptions) {
     try {

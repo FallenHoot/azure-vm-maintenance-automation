@@ -3,18 +3,18 @@
 > **DISCLAIMER**  
 > This script is provided as sample guidance only and is not a supported Microsoft product. It is provided "AS IS", without warranty of any kind, express or implied, including but not limited to the warranties of merchantability, fitness for a particular purpose, and noninfringement. Microsoft and the author(s) are not liable for any damages arising from the use of this code. Review and test in a non-production environment before use.
 
-**Set it and forget it.** This Azure Automation solution automatically starts deallocated VMs before scheduled maintenance windows and stops them afterward. Once deployed, it runs on schedule without manual intervention.
+Automatically starts deallocated VMs before scheduled maintenance windows and stops them afterward. Supports three deployment styles to fit your needs.
 
 ## How It Works
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│  3rd Sunday of Each Month                                        │
+│  3rd Sunday of Each Month (Automatic)                           │
 ├──────────────────────────────────────────────────────────────────┤
 │                                                                  │
 │  06:00 ─► PreMaintenance Runbook                                │
 │           • Scans all subscriptions for deallocated VMs         │
-│           • Filters VMs by name pattern or tag                  │
+│           • Filters by name pattern or tag                      │
 │           • Starts matching VMs                                 │
 │           • Saves state to Azure Blob Storage                   │
 │                                                                  │
@@ -30,78 +30,118 @@
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-## Quick Start
+## Choose Your Style
 
-### 1. Configure Your Settings
+| Style | Files | Configuration | Best For |
+|-------|-------|--------------|----------|
+| **Scheduled** (default) | 4 `*-Scheduled.ps1` | Hardcoded in script | Azure Automation set-and-forget |
+| **Separate** | 4 `*-PRE/PRD.ps1` | Parameters with defaults | Flexible, reusable runbooks |
+| **Combined** | 2 `*-Combined.ps1` | `-Environment` parameter | Fewer runbooks to manage |
 
-Edit [infra/main.bicepparam](infra/main.bicepparam) **before deployment**:
+---
+
+## Option A: Scheduled (Zero-Touch) — Recommended
+
+**Works out of the box for Azure Automation.** Configure once, deploy, forget.
+
+### Step 1: Edit Configuration in Scheduled Runbook Scripts
+
+Edit the `CONFIGURATION` section at the top of each `*-Scheduled.ps1` file:
+
+```powershell
+# ============================================================================
+# CONFIGURATION - Edit these values before deployment
+# ============================================================================
+$Environment = "PRE"
+$StorageAccountName = "yourstorageaccount"    # ← Change this
+$StorageAccountRG = "your-storage-rg"          # ← Change this
+$ContainerName = "vm-maintenance"
+$FilterBy = "Name"
+$NamePattern = "PRE"                           # ← Change to match your VMs
+$TagName = "env"
+$TagValue = "pre"
+# ============================================================================
+```
+
+Edit all 4 scheduled runbook files:
+- `PreMaintenance-PRE-Scheduled.ps1` — PRE environment
+- `PreMaintenance-PRD-Scheduled.ps1` — PRD environment
+- `PostMaintenance-PRE-Scheduled.ps1` — Must match Pre storage settings
+- `PostMaintenance-PRD-Scheduled.ps1` — Must match Pre storage settings
+
+### Step 2: Deploy
+
+```powershell
+.\scripts\Deploy-Automation.ps1 -ResourceGroupName "rg-automation" -Location "centralus"
+```
+
+### Step 3: Test and Done
+
+1. Go to Automation Account → Runbooks → PreMaintenance-PRE → Start
+2. Review output, verify correct VMs targeted
+3. Run PostMaintenance-PRE to stop them
+4. Runbooks now execute automatically on the 3rd Sunday. No further action needed.
+
+---
+
+## Option B: Separate (Parameterized)
+
+**4 individual runbooks with `param()` blocks.** Storage config passed via Bicep job schedules or overridden at runtime.
+
+### Step 1: Edit Bicep Parameters
+
+Edit [infra/main.bicepparam](infra/main.bicepparam):
 
 ```bicep
-// Storage account for state persistence (must exist)
+param runbookStyle = 'Separate'
 param storageAccountName = 'yourstorageaccount'
 param storageAccountRG = 'your-storage-rg'
-
-// Schedule times (24-hour format)
-param preMaintenanceTimePRE = '06:00'   // When to start VMs
-param postMaintenanceTimePRE = '22:00'  // When to stop VMs
-
-// Time zone
-param timeZone = 'America/Chicago'
-
-// Runbook style: 'Separate' (4 runbooks) or 'Combined' (2 runbooks)
-param runbookStyle = 'Separate'
 ```
 
-### 2. Configure VM Filtering
+### Step 2: Deploy
 
-Choose how VMs are identified. Edit the default values in the runbook files **before deployment**:
-
-**Option A: Filter by VM Name** (default)
 ```powershell
-# In PreMaintenance-PRE.ps1 / PreMaintenance-PRD.ps1
-$NamePattern = "PRE"    # Matches VMs with "PRE" in the name
-$NamePattern = "PRD"    # Matches VMs with "PRD" in the name
-
-# Regex examples:
-$NamePattern = "^YOURPREFIX"     # Starts with YOURPREFIX
-$NamePattern = "-prod$"          # Ends with -prod
-$NamePattern = "^(APP|WEB|DB)"   # Starts with APP, WEB, or DB
+.\scripts\Deploy-Automation.ps1 -ResourceGroupName "rg-automation" -Location "centralus" -RunbookStyle "Separate"
 ```
 
-**Option B: Filter by Azure Tag**
+### Step 3: Customize (Optional)
+
+You can override parameters when running manually:
 ```powershell
-# In PreMaintenance-PRE.ps1 / PreMaintenance-PRD.ps1
-$FilterBy = "Tag"
-$TagName = "env"
-$TagValue = "pre"       # or "prod", "dev", etc.
-
-# Common tag strategies:
-$TagName = "MaintenanceWindow"
-$TagValue = "Sunday-0600"
-
-$TagName = "PatchGroup"
-$TagValue = "Group1"
+Start-AzAutomationRunbook -Name "PreMaintenance-PRE" `
+  -Parameters @{ FilterBy = "Tag"; TagName = "env"; TagValue = "pre"; DryRun = $true } `
+  -ResourceGroupName "rg-automation" -AutomationAccountName "aa-vm-maintenance"
 ```
 
-### 3. Deploy
+---
+
+## Option C: Combined
+
+**2 runbooks handle both PRE and PRD** via the `-Environment` parameter. Fewer runbooks to manage.
+
+### Step 1: Edit Bicep Parameters
+
+```bicep
+param runbookStyle = 'Combined'
+param storageAccountName = 'yourstorageaccount'
+param storageAccountRG = 'your-storage-rg'
+```
+
+### Step 2: Deploy
 
 ```powershell
-git clone https://github.com/FallenHoot/azure-vm-maintenance-automation.git
-cd azure-vm-maintenance-automation
-
-# Deploy (choose one style)
-.\scripts\Deploy-Automation.ps1 -ResourceGroupName "rg-automation" -Location "centralus"
-
-# Or for combined runbooks
 .\scripts\Deploy-Automation.ps1 -ResourceGroupName "rg-automation" -Location "centralus" -RunbookStyle "Combined"
 ```
 
-### 4. Assign Roles to Additional Subscriptions
+---
 
-If VMs span multiple subscriptions, assign the Managed Identity to each:
+## Post-Deployment (All Styles)
+
+### Assign Roles to Additional Subscriptions
+
+If VMs span multiple subscriptions:
 
 ```powershell
-# Get the Principal ID from deployment output, then:
 $principalId = "<from-deployment-output>"
 $subscriptionIds = @("sub-1", "sub-2", "sub-3")
 
@@ -111,89 +151,45 @@ foreach ($subId in $subscriptionIds) {
 }
 ```
 
-### 5. Test Before Production (Required)
+### Edit Schedule Times
 
-⚠️ **Always validate your configuration before relying on scheduled execution.**
+Edit [infra/main.bicepparam](infra/main.bicepparam):
 
-**Step 1: DryRun Test**
-```powershell
-# In Azure Portal: Automation Account → Runbooks → PreMaintenance-PRE → Start
-# Set parameter: DryRun = true
+```bicep
+param preMaintenanceTimePRE = '06:00'
+param postMaintenanceTimePRE = '22:00'
+param preMaintenanceTimePRD = '06:00'
+param postMaintenanceTimePRD = '22:00'
+param timeZone = 'America/Chicago'
 ```
 
-Review the job output to confirm the correct VMs are being targeted:
-- Check "VMs to start" list matches your expectations
-- Verify no unexpected VMs are included
-- Confirm storage account connectivity works
+## VM Filtering
 
-**Step 2: Live Test (Non-Production)**
+### Filter by Name (Default)
 
-Run against PRE/non-production VMs first with DryRun = false:
+Edit `$NamePattern` (or pass as parameter for Separate/Combined):
+
+| Pattern | Matches |
+|---------|---------|
+| `PRE` | VM-PRE-01, PREVM, MyPREServer |
+| `^DEV` | DEV-Server01, DEV-DB01 |
+| `-prod$` | Web-prod, API-prod |
+| `^(APP\|WEB)` | APP01, WEB02 |
+
+### Filter by Tag
+
+Set `$FilterBy = "Tag"` and configure:
+
 ```powershell
-# Start PRE VMs
-Start-AzAutomationRunbook -ResourceGroupName "rg-automation" `
-  -AutomationAccountName "aa-vm-maintenance" -Name "PreMaintenance-PRE"
-
-# Wait, verify VMs started, then stop them
-Start-AzAutomationRunbook -ResourceGroupName "rg-automation" `
-  -AutomationAccountName "aa-vm-maintenance" -Name "PostMaintenance-PRE"
+$FilterBy = "Tag"
+$TagName = "env"
+$TagValue = "pre"
 ```
 
-**Step 3: Verify Results**
-- Confirm VMs started and stopped as expected
-- Check state file was created and deleted in storage container
-- Review job output for any warnings
-
-### 6. Done!
-
-Once testing is successful, the runbooks will automatically execute on the 3rd Sunday of each month.
-
-## Configuration Reference
-
-### Runbook Defaults
-
-| Setting | PRE Runbook | PRD Runbook | Description |
-|---------|-------------|-------------|-------------|
-| `FilterBy` | `Name` | `Name` | `Name` or `Tag` |
-| `NamePattern` | `PRE` | `PRD` | Regex to match VM names |
-| `TagName` | `env` | `env` | Tag key (if FilterBy=Tag) |
-| `TagValue` | `pre` | `prod` | Tag value (if FilterBy=Tag) |
-| `StorageAccountName` | `patchingvmlist` | `patchingvmlist` | State storage |
-| `StorageAccountRG` | `CAP-TST-01` | `CAP-TST-01` | Storage RG |
-| `ContainerName` | `vm-maintenance` | `vm-maintenance` | Blob container |
-
-### Schedule Configuration
-
-| Schedule | Time | Purpose |
-|----------|------|---------|
-| PreMaintenance-PRE | 06:00 (3rd Sunday) | Start PRE VMs |
-| PreMaintenance-PRD | 06:00 (3rd Sunday) | Start PRD VMs |
-| PostMaintenance-PRE | 22:00 (3rd Sunday) | Stop PRE VMs |
-| PostMaintenance-PRD | 22:00 (3rd Sunday) | Stop PRD VMs |
-
-### Required Role Assignments
-
-| Role | Scope | Purpose |
-|------|-------|---------|
-| Virtual Machine Contributor | Each subscription with VMs | Start/Stop VMs |
-| Reader | Each subscription with VMs | List VMs |
-| Storage Blob Data Contributor | Storage account | State persistence |
-
-## Excluding VMs from Automation
-
-To permanently exclude a VM, ensure it doesn't match your filter:
-
-- **Name filter**: Rename VM or change `NamePattern`
-- **Tag filter**: Remove the tag or change its value
-
-To temporarily exclude a VM for one maintenance window, ensure it's **running** (not deallocated) before the PreMaintenance runbook executes.
-
-## Monitoring
-
-View job history in Azure Portal:
-**Automation Account → Jobs → Select job → Output**
-
-Or enable diagnostic settings to send logs to Log Analytics for long-term monitoring.
+Common tag strategies:
+- `env` = `dev`, `test`, `pre`, `prod`
+- `MaintenanceWindow` = `Sunday-0600`
+- `PatchGroup` = `Group1`, `Group2`
 
 ## Architecture
 
@@ -201,7 +197,7 @@ Or enable diagnostic settings to send logs to Log Analytics for long-term monito
 ┌─────────────────────────────────────────────────────────────────┐
 │                    Azure Automation Account                      │
 ├─────────────────────────────────────────────────────────────────┤
-│  Runbooks:                        Schedules:                    │
+│  Runbooks (style-dependent):      Schedules:                    │
 │  ┌──────────────────────┐        ┌──────────────────────────┐  │
 │  │ PreMaintenance-PRE   │◄───────│ 3rd Sunday 06:00         │  │
 │  │ PreMaintenance-PRD   │◄───────│ 3rd Sunday 06:00         │  │
@@ -209,16 +205,14 @@ Or enable diagnostic settings to send logs to Log Analytics for long-term monito
 │  │ PostMaintenance-PRD  │◄───────│ 3rd Sunday 22:00         │  │
 │  └──────────────────────┘        └──────────────────────────┘  │
 │                                                                  │
-│  System-Assigned Managed Identity                               │
-│  └─► Authenticates to Azure (no credentials stored)            │
+│  System-Assigned Managed Identity (no credentials)             │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                    Azure Storage Account                         │
 │  Container: vm-maintenance                                       │
-│  └─► PRE-started-vms-2026-02-15-060000.json (auto-deleted)     │
-│  └─► PRD-started-vms-2026-02-15-060000.json (auto-deleted)     │
+│  └─► PRE-started-vms-YYYY-MM-DD-HHMMSS.json (auto-deleted)     │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -226,69 +220,76 @@ Or enable diagnostic settings to send logs to Log Analytics for long-term monito
 
 ```
 ├── runbooks/
-│   ├── PreMaintenance-PRE.ps1        # Edit defaults before deployment
-│   ├── PreMaintenance-PRD.ps1        # Edit defaults before deployment
-│   ├── PostMaintenance-PRE.ps1
-│   ├── PostMaintenance-PRD.ps1
-│   ├── PreMaintenance-Combined.ps1   # Alternative: single runbook
-│   └── PostMaintenance-Combined.ps1  # Alternative: single runbook
+│   ├── PreMaintenance-PRE-Scheduled.ps1    # Zero-touch (Scheduled style)
+│   ├── PreMaintenance-PRD-Scheduled.ps1    # Zero-touch (Scheduled style)
+│   ├── PostMaintenance-PRE-Scheduled.ps1   # Zero-touch (Scheduled style)
+│   ├── PostMaintenance-PRD-Scheduled.ps1   # Zero-touch (Scheduled style)
+│   ├── PreMaintenance-PRE.ps1              # Parameterized (Separate style)
+│   ├── PreMaintenance-PRD.ps1              # Parameterized (Separate style)
+│   ├── PostMaintenance-PRE.ps1             # Parameterized (Separate style)
+│   ├── PostMaintenance-PRD.ps1             # Parameterized (Separate style)
+│   ├── PreMaintenance-Combined.ps1         # Combined style
+│   └── PostMaintenance-Combined.ps1        # Combined style
 ├── infra/
-│   ├── main.bicep                    # Infrastructure as Code
-│   ├── main.bicepparam               # ← Edit this before deployment
-│   └── role-assignments.bicep
+│   ├── main.bicep                          # Infrastructure as Code
+│   ├── main.bicepparam                     # Deployment parameters
+│   └── role-assignments.bicep              # Role assignment template
 ├── scripts/
-│   └── Deploy-Automation.ps1
+│   └── Deploy-Automation.ps1               # Deployment script (all styles)
 └── README.md
 ```
+
+## Required Role Assignments
+
+| Role | Scope | Purpose |
+|------|-------|---------|
+| Virtual Machine Contributor | Each subscription with VMs | Start/Stop VMs |
+| Reader | Each subscription with VMs | List VMs |
+| Storage Blob Data Contributor | Storage account | State persistence |
 
 ## Troubleshooting
 
 | Issue | Cause | Solution |
 |-------|-------|----------|
-| No VMs started | Filter doesn't match | Verify `NamePattern` or `TagName`/`TagValue` in runbook |
-| Storage account not found | Wrong name or no access | Check `StorageAccountName` and role assignments |
+| No VMs started | Filter doesn't match | Verify `$NamePattern` or tag settings |
+| Storage account not found | Wrong name or no access | Check storage config and role assignments |
 | VMs not stopping | State file missing | Check storage container for state files |
-| Job failed | Managed Identity permissions | Assign VM Contributor to all target subscriptions |
+| Job failed | Managed Identity permissions | Assign VM Contributor to target subscriptions |
 
-## Technical Details
+## Excluding VMs
 
-- **PowerShell 7.2** runtime
-- **Managed Identity** authentication (no credentials)
-- **Parallel execution** with `-NoWait` for performance
-- **Idempotent** - safe to run multiple times
-- **Multi-subscription** - scans all enabled subscriptions
-
-**Required Az Modules**: `Az.Accounts`, `Az.Compute`, `Az.Storage`
+- **Name filter**: Ensure VM name doesn't match `$NamePattern`
+- **Tag filter**: Remove or change the tag value
+- **Temporary**: Keep VM running (not deallocated) before PreMaintenance runs
 
 ## Potential Enhancements
 
-These are not implemented but could be added for specific customer needs:
-
 ### Sequenced Startup (Start Order)
 
-For environments with dependencies (e.g., database must start before app servers), you could implement staged startup using tags:
+For environments with dependencies (DB before App):
 
-**Concept:**
 1. Tag VMs with `StartOrder`: `1`, `2`, `3`
-2. Create separate schedules for each wave with time delays
-3. Wave 1 (06:00): Infrastructure - Domain Controllers, DNS
-4. Wave 2 (06:15): Data tier - Databases, file servers  
-5. Wave 3 (06:30): Application tier - Web servers, app servers
-
-**Implementation approach:**
-- Create 3 PreMaintenance runbooks (or use Combined with different parameters)
-- Each filters by `StartOrder` tag value
-- Schedule them 15 minutes apart
+2. Create separate schedules with time delays
+3. Wave 1 (06:00): Infrastructure
+4. Wave 2 (06:15): Databases
+5. Wave 3 (06:30): Application servers
 
 ### Other Ideas
 
 | Enhancement | Description |
 |-------------|-------------|
-| Email notifications | Add Logic App or SendGrid to notify on completion/failure |
-| Teams alerts | Post job status to Teams channel via webhook |
-| Cost tracking | Log VM runtime hours to estimate savings |
-| Exclusion tag | Add `MaintenanceExclude=true` tag check to skip specific VMs |
+| Email notifications | Logic App or SendGrid integration |
+| Teams alerts | Webhook to Teams channel |
+| Cost tracking | Log VM runtime hours |
+
+## Technical Details
+
+- **PowerShell 7.2** runtime
+- **Managed Identity** authentication
+- **Parallel execution** with `-NoWait`
+- **Multi-subscription** support
+- **Idempotent** — safe to run multiple times
+
+**Required Az Modules**: `Az.Accounts`, `Az.Compute`, `Az.Storage`
 
 ## License
-
-MIT License

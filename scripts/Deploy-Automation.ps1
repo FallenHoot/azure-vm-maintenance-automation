@@ -4,7 +4,11 @@
 
 .DESCRIPTION
     Deploys the Azure Automation Account using Bicep, uploads runbook scripts,
-    and configures role assignments. Supports both Separate and Combined runbook styles.
+    and configures role assignments. Supports three runbook styles:
+
+    - Scheduled (default): Zero-touch. Config hardcoded in scripts. No manual input needed.
+    - Separate: 4 parameterized runbooks. Storage config passed via Bicep job schedules.
+    - Combined: 2 runbooks with -Environment param. Config passed via Bicep job schedules.
 
 .PARAMETER ResourceGroupName
     The resource group to deploy into.
@@ -12,38 +16,36 @@
 .PARAMETER Location
     Azure region for the deployment.
 
-.PARAMETER AutomationAccountName
-    Name of the Automation Account.
-
 .PARAMETER RunbookStyle
-    Deployment style: 'Separate' (4 env-specific runbooks) or 'Combined' (2 runbooks with -Environment param).
+    Deployment style: 'Scheduled' (default), 'Separate', or 'Combined'.
 
 .PARAMETER SubscriptionId
     Target subscription ID for role assignments.
 
 .EXAMPLE
-    # Deploy with separate runbooks (default)
+    # Zero-touch (default) - works out of the box for Azure Automation
     .\Deploy-Automation.ps1 -ResourceGroupName "rg-automation" -Location "centralus"
 
 .EXAMPLE
-    # Deploy with combined runbooks
+    # Parameterized separate runbooks
+    .\Deploy-Automation.ps1 -ResourceGroupName "rg-automation" -Location "centralus" -RunbookStyle "Separate"
+
+.EXAMPLE
+    # Combined runbooks with -Environment parameter
     .\Deploy-Automation.ps1 -ResourceGroupName "rg-automation" -Location "centralus" -RunbookStyle "Combined"
 #>
 
 param (
     [Parameter(Mandatory = $true)]
     [string]$ResourceGroupName,
-    
+
     [Parameter(Mandatory = $false)]
     [string]$Location = "centralus",
-    
+
     [Parameter(Mandatory = $false)]
-    [string]$AutomationAccountName = "aa-vm-maintenance",
-    
-    [Parameter(Mandatory = $false)]
-    [ValidateSet("Separate", "Combined")]
-    [string]$RunbookStyle = "Separate",
-    
+    [ValidateSet("Scheduled", "Separate", "Combined")]
+    [string]$RunbookStyle = "Scheduled",
+
     [Parameter(Mandatory = $false)]
     [string]$SubscriptionId = ""
 )
@@ -100,7 +102,6 @@ Write-Host "Infrastructure deployed successfully" -ForegroundColor Green
 
 $principalId = $deployment.Outputs.managedIdentityPrincipalId.Value
 $automationAccountName = $deployment.Outputs.automationAccountName.Value
-$deployedRunbooks = $deployment.Outputs.runbookNames.Value
 
 Write-Host "  Automation Account: $automationAccountName"
 Write-Host "  Managed Identity Principal ID: $principalId"
@@ -111,30 +112,41 @@ Write-Host "  Runbook Style: $RunbookStyle"
 # ============================================================================
 Write-Host "`n[3/5] Uploading runbook scripts..." -ForegroundColor Yellow
 
-if ($RunbookStyle -eq "Combined") {
-    $runbooks = @(
-        @{ Name = "PreMaintenance-Combined"; File = "PreMaintenance-Combined.ps1" },
-        @{ Name = "PostMaintenance-Combined"; File = "PostMaintenance-Combined.ps1" }
-    )
-} else {
-    $runbooks = @(
-        @{ Name = "PreMaintenance-PRE"; File = "PreMaintenance-PRE.ps1" },
-        @{ Name = "PreMaintenance-PRD"; File = "PreMaintenance-PRD.ps1" },
-        @{ Name = "PostMaintenance-PRE"; File = "PostMaintenance-PRE.ps1" },
-        @{ Name = "PostMaintenance-PRD"; File = "PostMaintenance-PRD.ps1" }
-    )
+switch ($RunbookStyle) {
+    "Scheduled" {
+        $runbooks = @(
+            @{ Name = "PreMaintenance-PRE"; File = "PreMaintenance-PRE-Scheduled.ps1" },
+            @{ Name = "PreMaintenance-PRD"; File = "PreMaintenance-PRD-Scheduled.ps1" },
+            @{ Name = "PostMaintenance-PRE"; File = "PostMaintenance-PRE-Scheduled.ps1" },
+            @{ Name = "PostMaintenance-PRD"; File = "PostMaintenance-PRD-Scheduled.ps1" }
+        )
+    }
+    "Separate" {
+        $runbooks = @(
+            @{ Name = "PreMaintenance-PRE"; File = "PreMaintenance-PRE.ps1" },
+            @{ Name = "PreMaintenance-PRD"; File = "PreMaintenance-PRD.ps1" },
+            @{ Name = "PostMaintenance-PRE"; File = "PostMaintenance-PRE.ps1" },
+            @{ Name = "PostMaintenance-PRD"; File = "PostMaintenance-PRD.ps1" }
+        )
+    }
+    "Combined" {
+        $runbooks = @(
+            @{ Name = "PreMaintenance-Combined"; File = "PreMaintenance-Combined.ps1" },
+            @{ Name = "PostMaintenance-Combined"; File = "PostMaintenance-Combined.ps1" }
+        )
+    }
 }
 
 foreach ($runbook in $runbooks) {
     $runbookFile = Join-Path $runbooksPath $runbook.File
-    
+
     if (-not (Test-Path $runbookFile)) {
         Write-Warning "Runbook file not found: $runbookFile"
         continue
     }
-    
-    Write-Host "  Uploading: $($runbook.Name)"
-    
+
+    Write-Host "  Uploading: $($runbook.Name) ← $($runbook.File)"
+
     Import-AzAutomationRunbook `
         -ResourceGroupName $ResourceGroupName `
         -AutomationAccountName $automationAccountName `
@@ -142,12 +154,12 @@ foreach ($runbook in $runbooks) {
         -Path $runbookFile `
         -Type PowerShell72 `
         -Force | Out-Null
-    
+
     Publish-AzAutomationRunbook `
         -ResourceGroupName $ResourceGroupName `
         -AutomationAccountName $automationAccountName `
         -Name $runbook.Name | Out-Null
-    
+
     Write-Host "    Published: $($runbook.Name)" -ForegroundColor Green
 }
 
@@ -168,14 +180,14 @@ $roles = @(
 
 foreach ($role in $roles) {
     Write-Host "  Assigning: $($role.Name)"
-    
+
     try {
         $existing = Get-AzRoleAssignment `
             -ObjectId $principalId `
             -RoleDefinitionId $role.Id `
             -Scope "/subscriptions/$SubscriptionId" `
             -ErrorAction SilentlyContinue
-        
+
         if ($existing) {
             Write-Host "    Already assigned" -ForegroundColor Yellow
         } else {
@@ -217,7 +229,28 @@ foreach ($sch in $schedules) {
 Write-Host "========================================" -ForegroundColor Cyan
 
 Write-Host "`nDeployment completed successfully!" -ForegroundColor Green
+
+switch ($RunbookStyle) {
+    "Scheduled" {
+        Write-Host "`nZero-Touch Operation:" -ForegroundColor Yellow
+        Write-Host "  - Runbooks execute automatically on the 3rd Sunday of each month"
+        Write-Host "  - No manual input required"
+        Write-Host "  - Configuration is hardcoded in the *-Scheduled.ps1 scripts"
+    }
+    "Separate" {
+        Write-Host "`nParameterized Operation:" -ForegroundColor Yellow
+        Write-Host "  - Runbooks accept parameters for storage config and DryRun"
+        Write-Host "  - Job schedules pass storage configuration from Bicep params"
+        Write-Host "  - Override defaults by editing runbook parameters or Bicep params"
+    }
+    "Combined" {
+        Write-Host "`nCombined Operation:" -ForegroundColor Yellow
+        Write-Host "  - 2 runbooks handle both PRE and PRD via -Environment parameter"
+        Write-Host "  - Job schedules pass Environment and storage config from Bicep params"
+        Write-Host "  - Override defaults by editing Bicep params"
+    }
+}
+
 Write-Host "`nNext Steps:" -ForegroundColor Yellow
 Write-Host "1. If VMs span multiple subscriptions, assign roles to each subscription"
-Write-Host "2. Test runbooks with DryRun=true before the next maintenance window"
-Write-Host "3. Monitor jobs in Azure Portal > Automation Account > Jobs"
+Write-Host "2. Test runbooks manually before the first scheduled maintenance window"

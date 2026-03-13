@@ -83,7 +83,11 @@ if ($FilterBy -eq "Name") {
 Write-Output "Deallocated: $($deallocatedVMs.Count) | Filtered ($FilterBy): $($filteredVMs.Count)"
 
 if ($filteredVMs.Count -eq 0) {
-    Write-Output "No matching VMs to start"
+    Write-Output "No matching VMs to start. Pattern='$NamePattern' FilterBy='$FilterBy'"
+    if ($deallocatedVMs.Count -gt 0) {
+        Write-Output "--- Deallocated VMs found (update NamePattern to match one of these) ---"
+        $deallocatedVMs | ForEach-Object { Write-Output "  $($_.Name) | RG: $($_.ResourceGroup) | Sub: $($_.SubscriptionName)" }
+    }
     return
 }
 

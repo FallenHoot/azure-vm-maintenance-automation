@@ -1,0 +1,106 @@
+param(
+    [string]$StorageAccountName = "patchingvmlist",
+    [string]$StorageAccountRG = "CAP-TST-01",
+    [string]$ContainerName = "vm-maintenance",
+    [Parameter(Mandatory = $false)]
+    [ValidateSet('PRD','UAT','DEV','ALL')]
+    [string]$Environment = 'PRD',
+ 
+    [Parameter(Mandatory = $false)]
+    [ValidateSet('Name','Tag','All')]
+    [string]$FilterBy = 'Name',
+ 
+    [Parameter(Mandatory = $false)]
+    [string]$NamePatternPRD = 'PRD',
+ 
+    [Parameter(Mandatory = $false)]
+    [string]$TagName = 'ENV',
+ 
+    [Parameter(Mandatory = $false)]
+    [string]$TagValuePRD = 'PRD',
+ 
+    [Parameter(Mandatory = $false)]
+    [bool]$DryRun = $true
+ 
+)
+Connect-AzAccount -Identity | Out-Null
+ 
+# Scan all subscriptions
+$allVMs = @()
+foreach ($sub in (Get-AzSubscription | Where-Object { $_.State -eq "Enabled" })) {
+    Set-AzContext -SubscriptionId $sub.Id | Out-Null
+    Get-AzVM -Status | ForEach-Object {
+        $tags = (Get-AzVM -Name $_.Name -ResourceGroupName $_.ResourceGroupName).Tags
+        $allVMs += @{ Name = $_.Name; SubscriptionId = $sub.Id; SubscriptionName = $sub.Name; PowerState = $_.PowerState; Tags = $tags }
+    }
+}
+ 
+$deallocatedVMs = @($allVMs | Where-Object { $_.PowerState -eq "VM deallocated" })
+ 
+# Filter by environment using Name pattern or Tag
+$filteredVMs = @(if ($Environment -eq "ALL") {
+    $deallocatedVMs
+} elseif ($FilterBy -eq "Name") {
+    $pattern = if ($Environment -eq "PRE") { $NamePatternPRE } else { $NamePatternPRD }
+    $deallocatedVMs | Where-Object { $_.Name -match $pattern }
+} else {
+    $tagValue = if ($Environment -eq "PRE") { $TagValuePRE } else { $TagValuePRD }
+    $deallocatedVMs | Where-Object {
+        $vmTags = $_.Tags
+        if ($null -eq $vmTags) { return $false }
+        $matchingKey = $vmTags.Keys | Where-Object { $_ -ieq $TagName } | Select-Object -First 1
+        if ($matchingKey) { $vmTags[$matchingKey] -eq $tagValue } else { $false }
+    }
+})
+ 
+# DryRun shows all VMs; TestMode only limits actual execution
+$targetVMs = @(if ($DryRun) {
+    $filteredVMs  # Show all matching VMs in DryRun
+} elseif ($TestMode) {
+    $filteredVMs | Where-Object { $_.Name -in $TestVMs }  # Limit to test VMs for actual execution
+} else {
+    $filteredVMs
+})
+ 
+Write-Output "Environment:$Environment FilterBy:$FilterBy TestMode:$TestMode DryRun:$DryRun"
+Write-Output "Scanned:$($allVMs.Count) Deallocated:$($deallocatedVMs.Count) Filtered:$($filteredVMs.Count) Targets:$($targetVMs.Count)"
+if ($filteredVMs.Count -eq 0) { Write-Output "No VMs match filter"; return }
+ 
+# Start target VMs
+foreach ($vm in $targetVMs) {
+    if (-not $DryRun) {
+        Set-AzContext -SubscriptionId $vm.SubscriptionId | Out-Null
+        Start-AzVM -Name $vm.Name -ResourceGroupName (Get-AzVM -Name $vm.Name).ResourceGroupName -NoWait | Out-Null
+    }
+    Write-Output "$(if($DryRun){'[DryRun] Would start'}else{'Started'}): $($vm.Name)"
+}
+ 
+# Save state
+$storageAccount = $null
+foreach ($sub in (Get-AzSubscription | Where-Object { $_.State -eq "Enabled" })) {
+    Set-AzContext -SubscriptionId $sub.Id | Out-Null
+    $storageAccount = Get-AzStorageAccount -ResourceGroupName $StorageAccountRG -Name $StorageAccountName -ErrorAction SilentlyContinue
+    if ($storageAccount) { break }
+}
+if (-not $storageAccount) { Write-Output "Storage not found"; return }
+ 
+$ctx = $storageAccount.Context
+if (-not (Get-AzStorageContainer -Name $ContainerName -Context $ctx -ErrorAction SilentlyContinue)) {
+    New-AzStorageContainer -Name $ContainerName -Context $ctx -Permission Off | Out-Null
+}
+ 
+# Build VM list with status showing what actually happened
+$targetVMNames = $targetVMs | ForEach-Object { $_.Name }
+$vmList = $filteredVMs | ForEach-Object {
+    $wasStarted = $_.Name -in $targetVMNames
+    $status = if ($DryRun) { if ($wasStarted) { "WouldStart" } else { "NoChange" } }
+              else { if ($wasStarted) { "Started" } else { "NotInScope" } }
+    @{ SubscriptionName = $_.SubscriptionName; VMName = $_.Name; Status = $status }
+}
+$blobName = "$Environment-started-vms-$(Get-Date -Format 'yyyy-MM-dd-HHmmss').json"
+$tempFile = [System.IO.Path]::GetTempFileName()
+@{ Environment = $Environment; FilterBy = $FilterBy; TestMode = $TestMode; DryRun = $DryRun; VMs = $vmList } | ConvertTo-Json -Depth 5 | Out-File $tempFile -Encoding UTF8
+Set-AzStorageBlobContent -File $tempFile -Container $ContainerName -Blob $blobName -Context $ctx -Force | Out-Null
+Remove-Item $tempFile -Force
+Write-Output "State: $blobName | Started: $($targetVMs.Count)"
+ 

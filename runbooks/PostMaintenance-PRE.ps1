@@ -19,7 +19,7 @@ if ($weekOfMonth -ne 3) {
     Write-Output "Today is Sunday week $weekOfMonth, not the 3rd Sunday. Exiting."
     return
 }
-Write-Output "3rd Sunday confirmed – proceeding with $Environment maintenance."
+Write-Output "3rd Sunday confirmed - proceeding with $Environment maintenance."
 
 $ErrorActionPreference = "Stop"
 $null = Disable-AzContextAutosave -Scope Process

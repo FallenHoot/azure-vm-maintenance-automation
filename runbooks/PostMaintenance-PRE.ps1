@@ -7,6 +7,20 @@ param (
     [bool]$DryRun = $false
 )
 $Environment = "PRE"
+
+# --- 3rd Sunday gate ---
+$today = Get-Date
+$weekOfMonth = [math]::Ceiling($today.Day / 7)
+if ($today.DayOfWeek -ne 'Sunday') {
+    Write-Output "Today is $($today.DayOfWeek), not Sunday. Exiting."
+    return
+}
+if ($weekOfMonth -ne 3) {
+    Write-Output "Today is Sunday week $weekOfMonth, not the 3rd Sunday. Exiting."
+    return
+}
+Write-Output "3rd Sunday confirmed – proceeding with $Environment maintenance."
+
 $ErrorActionPreference = "Stop"
 $null = Disable-AzContextAutosave -Scope Process
 try {

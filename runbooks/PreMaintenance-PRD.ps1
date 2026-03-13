@@ -1,6 +1,6 @@
 param (
-    [string]$StorageAccountName = "patchingvmlist",
-    [string]$StorageAccountRG = "CAP-TST-01",
+    [string]$StorageAccountName = "autopatchingvmlist",
+    [string]$StorageAccountRG = "Patching-Automation",
     [string]$ContainerName = "vm-maintenance",
     [ValidateSet("Name", "Tag")][string]$FilterBy = "Name",
     [string]$NamePattern = "PRD",

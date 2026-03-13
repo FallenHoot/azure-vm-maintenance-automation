@@ -96,4 +96,5 @@ try {
     Set-AzStorageBlobContent -File $tempFile -Container $ContainerName -Blob $blobName -Context $ctx -DefaultProfile $AzureContext -Force | Out-Null
 } finally { Remove-Item $tempFile -Force -ErrorAction SilentlyContinue }
 
-Write-Output "=== SUMMARY: $Environment | DryRun:$DryRun | Started:$($startedVMs.Count) Failed:$($failedVMs.Count) | State:$blobName ==="
+$ExecutionModeLabel = if ($DryRun) { "TEST TEST TEST" } else { "LIVE LIVE LIVE" }
+Write-Output "=== SUMMARY: $Environment | Mode:$ExecutionModeLabel | DryRun:$DryRun | Started:$($startedVMs.Count) Failed:$($failedVMs.Count) | State:$blobName ==="

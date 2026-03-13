@@ -30,7 +30,7 @@ $TagName = "env"
 $TagValue = "prod"
 # ============================================================================
 
-if ($DryRun) { Write-Output "[DRY RUN] Mode enabled - no VMs will be started, no state file saved" }
+if ($DryRun) { Write-Output "[DRY RUN] Mode enabled - no VMs will be started; a dry-run report will be saved" }
 
 $ErrorActionPreference = "Stop"
 $null = Disable-AzContextAutosave -Scope Process
@@ -123,12 +123,7 @@ foreach ($vm in $filteredVMs) {
     }
 }
 
-# Save state to blob storage (skip in DryRun mode)
-if ($DryRun) {
-    Write-Output "[DRY RUN] Skipping state file save"
-    Write-Output "=== [DRY RUN] SUMMARY: $Environment | Would start: $($startedVMs.Count) | Failed: $($failedVMs.Count) ==="
-    return
-}
+# Save state to blob storage (including DryRun mode)
 
 $storageAccount = $null
 foreach ($sub in $subscriptions) {
@@ -151,6 +146,7 @@ if (-not (Get-AzStorageContainer -Name $ContainerName -Context $ctx -DefaultProf
 $stateData = @{
     Environment = $Environment
     FilterBy = $FilterBy
+    DryRun = $DryRun
     Timestamp = (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
     TotalScanned = $allVMs.Count
     TotalStarted = $startedVMs.Count
@@ -158,7 +154,7 @@ $stateData = @{
     VMs = ($startedVMs + $failedVMs)
 }
 
-$blobName = "$Environment-started-vms-$(Get-Date -Format 'yyyy-MM-dd-HHmmss').json"
+$blobName = "$Environment-vm-state-dryrun-$($DryRun.ToString().ToLower())-$(Get-Date -Format 'yyyy-MM-dd-HHmmss').json"
 $tempFile = [System.IO.Path]::GetTempFileName()
 
 try {
@@ -168,4 +164,4 @@ try {
     Remove-Item $tempFile -Force -ErrorAction SilentlyContinue
 }
 
-Write-Output "=== SUMMARY: $Environment | Started: $($startedVMs.Count) | Failed: $($failedVMs.Count) | State: $blobName ==="
+Write-Output "=== SUMMARY: $Environment | DryRun: $DryRun | Started: $($startedVMs.Count) | Failed: $($failedVMs.Count) | State: $blobName ==="

@@ -86,11 +86,11 @@ if (-not (Get-AzStorageContainer -Name $ContainerName -Context $ctx -DefaultProf
 }
 
 $stateData = @{ Environment=$Environment; FilterBy=$FilterBy; DryRun=$DryRun; Timestamp=(Get-Date -Format "yyyy-MM-dd HH:mm:ss"); TotalScanned=$allVMs.Count; TotalStarted=$startedVMs.Count; TotalFailed=$failedVMs.Count; VMs=($startedVMs + $failedVMs) }
-$blobName = "$Environment-started-vms-$(Get-Date -Format 'yyyy-MM-dd-HHmmss').json"
+$blobName = "$Environment-vm-state-dryrun-$($DryRun.ToString().ToLower())-$(Get-Date -Format 'yyyy-MM-dd-HHmmss').json"
 $tempFile = [System.IO.Path]::GetTempFileName()
 try {
     $stateData | ConvertTo-Json -Depth 5 | Out-File $tempFile -Encoding UTF8
     Set-AzStorageBlobContent -File $tempFile -Container $ContainerName -Blob $blobName -Context $ctx -DefaultProfile $AzureContext -Force | Out-Null
 } finally { Remove-Item $tempFile -Force -ErrorAction SilentlyContinue }
 
-Write-Output "=== SUMMARY: $Environment | Started:$($startedVMs.Count) Failed:$($failedVMs.Count) | State:$blobName ==="
+Write-Output "=== SUMMARY: $Environment | DryRun:$DryRun | Started:$($startedVMs.Count) Failed:$($failedVMs.Count) | State:$blobName ==="

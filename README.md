@@ -83,7 +83,7 @@ Edit all 4 scheduled runbook files:
 4. Run again without DryRun, then run PostMaintenance-PRE to stop them
 5. Runbooks now execute automatically on the 3rd Sunday. No further action needed.
 
-> **DryRun mode:** All Scheduled runbooks accept `-DryRun $true`. In DryRun mode, PreMaintenance logs which VMs _would_ be started (no state file saved). PostMaintenance logs which VMs _would_ be stopped (state file preserved). Defaults to `$false` — scheduled runs are fully automatic.
+> **DryRun mode:** All Scheduled runbooks accept `-DryRun $true`. In DryRun mode, PreMaintenance logs which VMs _would_ be started and saves a dry-run report blob. PostMaintenance logs which VMs _would_ be stopped (state file preserved). Blob files now include dry-run status in the filename: `*-vm-state-dryrun-true-*.json` or `*-vm-state-dryrun-false-*.json`, and the JSON payload also includes `"DryRun": true|false`.
 
 ---
 
@@ -239,6 +239,39 @@ Infrastructure is deployed using [Azure Verified Modules (AVM)](https://azure.gi
 | Storage Blob Data Contributor | Storage account | State persistence |
 
 ## Troubleshooting
+[## Scheduling on 3rd/4th Sunday of Month]
+
+Azure Automation does not natively support scheduling runbooks for the "nth Sunday" (e.g., 3rd or 4th Sunday) of the month. To achieve this:
+
+1. **Create a schedule to run the runbook every Sunday** (weekly recurrence).
+2. **Add logic at the start of your runbook** to check if today is the correct Sunday:
+
+  ```powershell
+  $today = Get-Date
+  $dayOfWeek = $today.DayOfWeek
+  $weekOfMonth = [math]::Ceiling($today.Day / 7)
+
+  if ($dayOfWeek -ne 'Sunday') {
+    Write-Output "Not Sunday. Exiting."
+    return
+  }
+
+  # For PRE: Only run on 3rd Sunday
+  if ($Environment -eq 'PRE' -and $weekOfMonth -ne 3) {
+    Write-Output "Not 3rd Sunday. Exiting."
+    return
+  }
+
+  # For PRD: Only run on 4th Sunday
+  if ($Environment -eq 'PRD' -and $weekOfMonth -ne 4) {
+    Write-Output "Not 4th Sunday. Exiting."
+    return
+  }
+  ```
+
+This ensures the runbook only executes its main logic on the correct Sunday for each environment. The schedule triggers every Sunday, but the runbook exits early unless it's the desired week.
+
+> **Tip:** You can test this logic by manually running the runbook and observing the output.
 
 | Issue | Cause | Solution |
 |-------|-------|----------|

@@ -3,16 +3,16 @@
 > **DISCLAIMER**  
 > This script is provided as sample guidance only and is not a supported Microsoft product. It is provided "AS IS", without warranty of any kind, express or implied, including but not limited to the warranties of merchantability, fitness for a particular purpose, and noninfringement. Microsoft and the author(s) are not liable for any damages arising from the use of this code. Review and test in a non-production environment before use.
 
-Automatically starts deallocated VMs before scheduled maintenance windows and stops them afterward. Runs on the **3rd Sunday** of each month in **India Standard Time (IST)**.
+Automatically starts deallocated VMs before scheduled maintenance windows and stops them afterward. Runs on the **3rd Sunday** of each month.
 
 ## How It Works
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│  3rd Sunday of Each Month – India Standard Time (IST)           │
+│  3rd Sunday of Each Month (Automatic)                           │
 ├──────────────────────────────────────────────────────────────────┤
 │                                                                  │
-│  06:00 IST ─► PreMaintenance Runbook                            │
+│  06:00 ─► PreMaintenance Runbook                                │
 │               • Scans all subscriptions for deallocated VMs     │
 │               • Filters by name pattern or tag                  │
 │               • Starts matching VMs                             │
@@ -22,7 +22,7 @@ Automatically starts deallocated VMs before scheduled maintenance windows and st
 │  │         Maintenance Window (VMs Running)               │     │
 │  └────────────────────────────────────────────────────────┘     │
 │                                                                  │
-│  22:00 IST ─► PostMaintenance Runbook                           │
+│  22:00 ─► PostMaintenance Runbook                               │
 │               • Reads state file from Blob Storage              │
 │               • Stops only the VMs that were started            │
 │               • Cleans up state file                            │
@@ -81,14 +81,14 @@ foreach ($subId in $subscriptionIds) {
 Edit [infra/main.bicepparam](infra/main.bicepparam):
 
 ```bicep
-param preMaintenanceTimePRE = '06:00'   // 6:00 AM IST
-param postMaintenanceTimePRE = '22:00'  // 10:00 PM IST
+param preMaintenanceTimePRE = '06:00'   // 6:00 AM in your time zone
+param postMaintenanceTimePRE = '22:00'  // 10:00 PM in your time zone
 param preMaintenanceTimePRD = '06:00'
 param postMaintenanceTimePRD = '22:00'
-param timeZone = 'Asia/Kolkata'         // India Standard Time (UTC+05:30)
+param timeZone = 'America/Chicago'      // IANA time zone — change to match your region
 ```
 
-> **Time Zone Note:** Schedule times are interpreted in the `timeZone` you specify (IANA format). India Standard Time (`Asia/Kolkata`, UTC+05:30) does not observe daylight saving time, so schedules run at the same local time year-round.
+> **Time Zone Note:** Schedule times are interpreted in the `timeZone` you specify (IANA format). Common values: `America/Chicago`, `America/New_York`, `Asia/Kolkata`, `Europe/London`, `Etc/UTC`. Change this to match your ops team's local time zone.
 
 ## VM Filtering
 
@@ -126,12 +126,12 @@ Infrastructure is deployed using [Azure Verified Modules (AVM)](https://azure.gi
 ┌─────────────────────────────────────────────────────────────────┐
 │              Azure Automation Account (AVM)                      │
 ├─────────────────────────────────────────────────────────────────┤
-│  Runbooks:                        Schedules (IST):              │
+│  Runbooks:                        Schedules (every Sunday):     │
 │  ┌──────────────────────┐        ┌──────────────────────────┐  │
-│  │ PreMaintenance-PRE   │◄───────│ Every Sunday 06:00 IST   │  │
-│  │ PreMaintenance-PRD   │◄───────│ Every Sunday 06:00 IST   │  │
-│  │ PostMaintenance-PRE  │◄───────│ Every Sunday 22:00 IST   │  │
-│  │ PostMaintenance-PRD  │◄───────│ Every Sunday 22:00 IST   │  │
+│  │ PreMaintenance-PRE   │◄───────│ Every Sunday 06:00        │  │
+│  │ PreMaintenance-PRD   │◄───────│ Every Sunday 06:00        │  │
+│  │ PostMaintenance-PRE  │◄───────│ Every Sunday 22:00        │  │
+│  │ PostMaintenance-PRD  │◄───────│ Every Sunday 22:00        │  │
 │  └──────────────────────┘        └──────────────────────────┘  │
 │  (3rd Sunday gate built into each runbook)                      │
 │                                                                  │

@@ -22,8 +22,8 @@ param postMaintenanceTimePRD = '22:00'  // 10:00 PM local - Stop VMs after maint
 // IANA time zone for all schedules
 // The schedule times above are interpreted in this time zone
 // Azure handles DST adjustments automatically
-// India Standard Time (UTC+05:30) - does not observe DST
-param timeZone = 'Asia/Kolkata'
+// Common values: 'America/Chicago', 'America/New_York', 'Asia/Kolkata', 'Europe/London', 'Etc/UTC'
+param timeZone = 'America/Chicago'
 
 // Resource tags
 param tags = {

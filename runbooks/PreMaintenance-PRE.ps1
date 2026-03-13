@@ -32,6 +32,7 @@ foreach ($sub in $subscriptions) {
 Write-Output "Scanned: $($allVMs.Count) VMs"
 
 $deallocatedVMs = @($allVMs | Where-Object { $_.PowerState -eq "VM deallocated" })
+$startedVMs = @(); $failedVMs = @()
 if ($FilterBy -eq "Name") {
     $filteredVMs = @($deallocatedVMs | Where-Object { $_.Name -match $NamePattern })
 } else {
@@ -48,10 +49,8 @@ if ($filteredVMs.Count -eq 0) {
         Write-Output "--- Deallocated VMs found (update NamePattern to match one of these) ---"
         $deallocatedVMs | ForEach-Object { Write-Output "  $($_.Name) | RG: $($_.ResourceGroup) | Sub: $($_.SubscriptionName)" }
     }
-    return
 }
 
-$startedVMs = @(); $failedVMs = @()
 foreach ($vm in $filteredVMs) {
     try {
         Set-AzContext -SubscriptionId $vm.SubscriptionId -DefaultProfile $AzureContext | Out-Null
@@ -83,8 +82,9 @@ if (-not (Get-AzStorageContainer -Name $ContainerName -Context $ctx -DefaultProf
     New-AzStorageContainer -Name $ContainerName -Context $ctx -DefaultProfile $AzureContext -Permission Off | Out-Null
 }
 
-$stateData = @{ Environment=$Environment; FilterBy=$FilterBy; DryRun=$DryRun; Timestamp=(Get-Date -Format "yyyy-MM-dd HH:mm:ss"); TotalScanned=$allVMs.Count; TotalStarted=$startedVMs.Count; TotalFailed=$failedVMs.Count; VMs=($startedVMs + $failedVMs) }
-$blobName = "$Environment-started-vms-$(Get-Date -Format 'yyyy-MM-dd-HHmmss').json"
+$stateData = @{ Environment=$Environment; FilterBy=$FilterBy; DryRun=$DryRun; Timestamp=(Get-Date -Format "yyyy-MM-dd HH:mm:ss"); TotalScanned=$allVMs.Count; TotalDeallocated=$deallocatedVMs.Count; TotalFiltered=$filteredVMs.Count; TotalStarted=$startedVMs.Count; TotalFailed=$failedVMs.Count; MatchedVMNames=@($filteredVMs | ForEach-Object { $_.Name }); VMs=($startedVMs + $failedVMs) }
+$blobPrefix = if ($DryRun) { "$Environment-dryrun-vms" } else { "$Environment-started-vms" }
+$blobName = "$blobPrefix-$(Get-Date -Format 'yyyy-MM-dd-HHmmss').json"
 $tempFile = [System.IO.Path]::GetTempFileName()
 try {
     $stateData | ConvertTo-Json -Depth 5 | Out-File $tempFile -Encoding UTF8

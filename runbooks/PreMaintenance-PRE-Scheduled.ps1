@@ -47,6 +47,11 @@ $AzureContext = Set-AzContext -SubscriptionName $AzureConnection.Subscription -D
 $allVMs = @()
 $subscriptions = Get-AzSubscription -DefaultProfile $AzureContext | Where-Object { $_.State -eq "Enabled" }
 
+Write-Output "Subscriptions discovered: $($subscriptions.Count)"
+foreach ($sub in $subscriptions) {
+    Write-Output "  - $($sub.Name) [$($sub.Id)]"
+}
+
 foreach ($sub in $subscriptions) {
     try {
         Set-AzContext -SubscriptionId $sub.Id -DefaultProfile $AzureContext | Out-Null

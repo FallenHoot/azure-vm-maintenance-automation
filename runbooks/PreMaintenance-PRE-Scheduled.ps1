@@ -141,10 +141,12 @@ if (-not (Get-AzStorageContainer -Name $ContainerName -Context $ctx -DefaultProf
     Write-Output "Created container: $ContainerName"
 }
 
+$ExecutionModeLabel = if ($DryRun) { "TEST TEST TEST" } else { "LIVE LIVE LIVE" }
 $stateData = @{
     Environment = $Environment
     FilterBy = $FilterBy
     DryRun = $DryRun
+    Mode = $ExecutionModeLabel
     Timestamp = (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
     TotalScanned = $allVMs.Count
     TotalStarted = $startedVMs.Count
@@ -161,6 +163,4 @@ try {
 } finally {
     Remove-Item $tempFile -Force -ErrorAction SilentlyContinue
 }
-
-$ExecutionModeLabel = if ($DryRun) { "TEST TEST TEST" } else { "LIVE LIVE LIVE" }
 Write-Output "=== SUMMARY: $Environment | Mode: $ExecutionModeLabel | DryRun: $DryRun | Started: $($startedVMs.Count) | Failed: $($failedVMs.Count) | State: $blobName ==="

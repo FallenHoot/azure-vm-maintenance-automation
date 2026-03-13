@@ -88,13 +88,12 @@ if (-not (Get-AzStorageContainer -Name $ContainerName -Context $ctx -DefaultProf
     New-AzStorageContainer -Name $ContainerName -Context $ctx -DefaultProfile $AzureContext -Permission Off | Out-Null
 }
 
-$stateData = @{ Environment=$Environment; FilterBy=$FilterBy; DryRun=$DryRun; Timestamp=(Get-Date -Format "yyyy-MM-dd HH:mm:ss"); TotalScanned=$allVMs.Count; TotalDeallocated=$deallocatedVMs.Count; TotalFiltered=$filteredVMs.Count; TotalStarted=$startedVMs.Count; TotalFailed=$failedVMs.Count; MatchedVMNames=@($filteredVMs | ForEach-Object { $_.Name }); VMs=($startedVMs + $failedVMs) }
+$ExecutionModeLabel = if ($DryRun) { "TEST TEST TEST" } else { "LIVE LIVE LIVE" }
+$stateData = @{ Environment=$Environment; FilterBy=$FilterBy; DryRun=$DryRun; Mode=$ExecutionModeLabel; Timestamp=(Get-Date -Format "yyyy-MM-dd HH:mm:ss"); TotalScanned=$allVMs.Count; TotalDeallocated=$deallocatedVMs.Count; TotalFiltered=$filteredVMs.Count; TotalStarted=$startedVMs.Count; TotalFailed=$failedVMs.Count; MatchedVMNames=@($filteredVMs | ForEach-Object { $_.Name }); VMs=($startedVMs + $failedVMs) }
 $blobName = "$Environment-vm-state-dryrun-$($DryRun.ToString().ToLower())-$(Get-Date -Format 'yyyy-MM-dd-HHmmss').json"
 $tempFile = [System.IO.Path]::GetTempFileName()
 try {
     $stateData | ConvertTo-Json -Depth 5 | Out-File $tempFile -Encoding UTF8
     Set-AzStorageBlobContent -File $tempFile -Container $ContainerName -Blob $blobName -Context $ctx -DefaultProfile $AzureContext -Force | Out-Null
 } finally { Remove-Item $tempFile -Force -ErrorAction SilentlyContinue }
-
-$ExecutionModeLabel = if ($DryRun) { "TEST TEST TEST" } else { "LIVE LIVE LIVE" }
 Write-Output "=== SUMMARY: $Environment | Mode:$ExecutionModeLabel | DryRun:$DryRun | Started:$($startedVMs.Count) Failed:$($failedVMs.Count) | State:$blobName ==="

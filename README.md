@@ -83,7 +83,7 @@ Edit all 4 scheduled runbook files:
 4. Run again without DryRun, then run PostMaintenance-PRE to stop them
 5. Runbooks now execute automatically on the 3rd Sunday. No further action needed.
 
-> **DryRun mode:** All Scheduled runbooks accept `-DryRun $true`. In DryRun mode, PreMaintenance logs which VMs _would_ be started and saves a dry-run report blob. PostMaintenance logs which VMs _would_ be stopped (state file preserved). Blob files now include dry-run status in the filename: `*-vm-state-dryrun-true-*.json` or `*-vm-state-dryrun-false-*.json`, and the JSON payload also includes `"DryRun": true|false`.
+> **DryRun mode:** All Scheduled runbooks accept `-DryRun $true`. PreMaintenance always writes a report blob to storage for both modes (`DryRun=$true` and `$false`) even when zero VMs match the filter. Blob files include mode in filename: `*-vm-state-dryrun-true-*.json` or `*-vm-state-dryrun-false-*.json`, and JSON payload includes `"DryRun": true|false`.
 
 ---
 

@@ -68,6 +68,8 @@ foreach ($sub in $subscriptions) {
 Write-Output "Scanned: $($allVMs.Count) VMs"
 
 $deallocatedVMs = @($allVMs | Where-Object { $_.PowerState -eq "VM deallocated" })
+$startedVMs = @()
+$failedVMs = @()
 
 if ($FilterBy -eq "Name") {
     $filteredVMs = @($deallocatedVMs | Where-Object { $_.Name -match $NamePattern })
@@ -90,11 +92,7 @@ if ($filteredVMs.Count -eq 0) {
         Write-Output "--- Deallocated VMs found (update NamePattern to match one of these) ---"
         $deallocatedVMs | ForEach-Object { Write-Output "  $($_.Name) | RG: $($_.ResourceGroup) | Sub: $($_.SubscriptionName)" }
     }
-    return
 }
-
-$startedVMs = @()
-$failedVMs = @()
 
 foreach ($vm in $filteredVMs) {
     try {

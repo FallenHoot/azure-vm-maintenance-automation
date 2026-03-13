@@ -41,9 +41,11 @@ if ($FilterBy -eq "Name") {
         if ($k) { $t[$k] -eq $TagValue } else { $false }
     })
 }
-Write-Output "Deallocated: $($deallocatedVMs.Count) | Filtered: $($filteredVMs.Count)"
+Write-Output "Deallocated VMs found: $($deallocatedVMs.Count)"
+Write-Output "Target VMs after filter (FilterBy='$FilterBy'): $($filteredVMs.Count)"
 if ($filteredVMs.Count -eq 0) {
-    Write-Output "No VMs matched filter. Pattern='$NamePattern' FilterBy='$FilterBy'"
+    Write-Output "No target VMs matched the filter. This runbook only starts filtered target VMs, not all deallocated VMs."
+    Write-Output "Pattern='$NamePattern' FilterBy='$FilterBy'"
     if ($deallocatedVMs.Count -gt 0) {
         Write-Output "--- Deallocated VMs found (update NamePattern to match one of these) ---"
         $deallocatedVMs | ForEach-Object { Write-Output "  $($_.Name) | RG: $($_.ResourceGroup) | Sub: $($_.SubscriptionName)" }

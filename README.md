@@ -3,103 +3,51 @@
 > **DISCLAIMER**  
 > This script is provided as sample guidance only and is not a supported Microsoft product. It is provided "AS IS", without warranty of any kind, express or implied, including but not limited to the warranties of merchantability, fitness for a particular purpose, and noninfringement. Microsoft and the author(s) are not liable for any damages arising from the use of this code. Review and test in a non-production environment before use.
 
-Automatically starts deallocated VMs before scheduled maintenance windows and stops them afterward. Supports three deployment styles to fit your needs.
+Automatically starts deallocated VMs before scheduled maintenance windows and stops them afterward. Runs on the **3rd Sunday** of each month in **India Standard Time (IST)**.
 
 ## How It Works
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│  3rd Sunday of Each Month (Automatic)                           │
+│  3rd Sunday of Each Month – India Standard Time (IST)           │
 ├──────────────────────────────────────────────────────────────────┤
 │                                                                  │
-│  06:00 ─► PreMaintenance Runbook                                │
-│           • Scans all subscriptions for deallocated VMs         │
-│           • Filters by name pattern or tag                      │
-│           • Starts matching VMs                                 │
-│           • Saves state to Azure Blob Storage                   │
+│  06:00 IST ─► PreMaintenance Runbook                            │
+│               • Scans all subscriptions for deallocated VMs     │
+│               • Filters by name pattern or tag                  │
+│               • Starts matching VMs                             │
+│               • Saves state to Azure Blob Storage               │
 │                                                                  │
 │  ┌────────────────────────────────────────────────────────┐     │
 │  │         Maintenance Window (VMs Running)               │     │
 │  └────────────────────────────────────────────────────────┘     │
 │                                                                  │
-│  22:00 ─► PostMaintenance Runbook                               │
-│           • Reads state file from Blob Storage                  │
-│           • Stops only the VMs that were started                │
-│           • Cleans up state file                                │
+│  22:00 IST ─► PostMaintenance Runbook                           │
+│               • Reads state file from Blob Storage              │
+│               • Stops only the VMs that were started            │
+│               • Cleans up state file                            │
 │                                                                  │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-## Choose Your Style
+## Deployment
 
-| Style | Files | Configuration | Best For |
-|-------|-------|--------------|----------|
-| **Scheduled** (default) | 4 `*-Scheduled.ps1` | Hardcoded in script | Azure Automation set-and-forget |
-| **Separate** | 4 `*-PRE/PRD.ps1` | Parameters with defaults | Flexible, reusable runbooks |
-| **Combined** | 2 `*-Combined.ps1` | `-Environment` parameter | Fewer runbooks to manage |
+**4 parameterized runbooks with `param()` blocks.** Storage config defaults are in the scripts; override at runtime or via job schedules. Each runbook includes a built-in 3rd Sunday gate — schedule them to run every Sunday and they automatically skip non-3rd-Sunday weeks.
 
----
-
-## Option A: Scheduled (Zero-Touch) — Recommended
-
-**Works out of the box for Azure Automation.** Configure once, deploy, forget.
-
-### Step 1: Edit Configuration in Scheduled Runbook Scripts
-
-Edit the `CONFIGURATION` section at the top of each `*-Scheduled.ps1` file:
-
-```powershell
-# ============================================================================
-# CONFIGURATION - Edit these values before deployment
-# ============================================================================
-$Environment = "PRE"
-$StorageAccountName = "yourstorageaccount"    # ← Change this
-$StorageAccountRG = "your-storage-rg"          # ← Change this
-$ContainerName = "vm-maintenance"
-$FilterBy = "Name"
-$NamePattern = "PRE"                           # ← Change to match your VMs
-$TagName = "env"
-$TagValue = "pre"
-# ============================================================================
-```
-
-Edit all 4 scheduled runbook files:
-- `PreMaintenance-PRE-Scheduled.ps1` — PRE environment
-- `PreMaintenance-PRD-Scheduled.ps1` — PRD environment
-- `PostMaintenance-PRE-Scheduled.ps1` — Must match Pre storage settings (`$DeleteStateFile = $false` by default)
-- `PostMaintenance-PRD-Scheduled.ps1` — Must match Pre storage settings (`$DeleteStateFile = $false` by default)
-
-### Step 2: Deploy
+### Step 1: Deploy
 
 ```powershell
 .\scripts\Deploy-Automation.ps1 -ResourceGroupName "rg-automation" -Location "centralus"
 ```
 
-### Step 3: Test and Done
+### Step 2: Test
 
 1. Go to Automation Account → Runbooks → PreMaintenance-PRE → Start
 2. Pass `-DryRun $true` to preview which VMs would be targeted without making changes
 3. Review output, verify correct VMs targeted
 4. Run again without DryRun, then run PostMaintenance-PRE to stop them
-5. Runbooks now execute automatically on the 3rd Sunday. No further action needed.
 
-> **DryRun mode:** All Scheduled runbooks accept `-DryRun $true`. PreMaintenance always writes a report blob to storage for both modes (`DryRun=$true` and `$false`) even when zero VMs match the filter. Blob files include mode in filename: `*-vm-state-dryrun-true-*.json` or `*-vm-state-dryrun-false-*.json`, and JSON payload includes `"DryRun": true|false`.
-
----
-
-## Option B: Separate (Parameterized)
-
-**4 individual runbooks with `param()` blocks.** Storage config defaults are in the scripts; override at runtime or via job schedules.
-
-### Step 1: Deploy
-
-The deploy script uploads the parameterized runbook files and uses the same Bicep infrastructure:
-
-```powershell
-.\scripts\Deploy-Automation.ps1 -ResourceGroupName "rg-automation" -Location "centralus" -RunbookStyle "Separate"
-```
-
-### Step 2: Customize (Optional)
+### Step 3: Customize (Optional)
 
 You can override parameters when running manually:
 ```powershell
@@ -108,17 +56,7 @@ Start-AzAutomationRunbook -Name "PreMaintenance-PRE" `
   -ResourceGroupName "rg-automation" -AutomationAccountName "aa-vm-maintenance"
 ```
 
----
-
-## Option C: Combined
-
-**2 runbooks handle both PRE and PRD** via the `-Environment` parameter. Fewer runbooks to manage.
-
-### Deploy
-
-```powershell
-.\scripts\Deploy-Automation.ps1 -ResourceGroupName "rg-automation" -Location "centralus" -RunbookStyle "Combined"
-```
+> **DryRun mode:** PreMaintenance always writes a report blob to storage for both modes (`DryRun=$true` and `$false`) even when zero VMs match the filter. Blob files include mode in filename: `*-vm-state-dryrun-true-*.json` or `*-vm-state-dryrun-false-*.json`. JSON payload includes `"DryRun": true|false` and `"Mode": "TEST TEST TEST"` or `"LIVE LIVE LIVE"`.
 
 ---
 
@@ -143,20 +81,20 @@ foreach ($subId in $subscriptionIds) {
 Edit [infra/main.bicepparam](infra/main.bicepparam):
 
 ```bicep
-param preMaintenanceTimePRE = '06:00'   // 6 AM in your time zone
-param postMaintenanceTimePRE = '22:00'  // 10 PM in your time zone
+param preMaintenanceTimePRE = '06:00'   // 6:00 AM IST
+param postMaintenanceTimePRE = '22:00'  // 10:00 PM IST
 param preMaintenanceTimePRD = '06:00'
 param postMaintenanceTimePRD = '22:00'
-param timeZone = 'America/Chicago'      // IANA time zone
+param timeZone = 'Asia/Kolkata'         // India Standard Time (UTC+05:30)
 ```
 
-> **Time Zone Note:** Schedule times are interpreted in the `timeZone` you specify (IANA format). Azure handles daylight saving adjustments automatically. Common values: `America/Chicago`, `America/New_York`, `America/Los_Angeles`, `Europe/London`, `Etc/UTC`. Do **not** use UTC unless your ops team thinks in UTC — your 6:00 AM start would shift relative to local business hours across DST changes.
+> **Time Zone Note:** Schedule times are interpreted in the `timeZone` you specify (IANA format). India Standard Time (`Asia/Kolkata`, UTC+05:30) does not observe daylight saving time, so schedules run at the same local time year-round.
 
 ## VM Filtering
 
 ### Filter by Name (Default)
 
-Edit `$NamePattern` (or pass as parameter for Separate/Combined):
+Edit `$NamePattern` (or pass as parameter):
 
 | Pattern | Matches |
 |---------|---------|
@@ -182,19 +120,20 @@ Common tag strategies:
 
 ## Architecture
 
-Infrastructure is deployed using [Azure Verified Modules (AVM)](https://azure.github.io/Azure-Verified-Modules/) via `br/public:avm/res/automation/automation-account:0.17.1`. The Bicep template deploys the zero-touch (Scheduled) style — runbook shells, schedules, and job schedules. The deploy script (`Deploy-Automation.ps1`) handles which runbook files are uploaded based on the `-RunbookStyle` parameter.
+Infrastructure is deployed using [Azure Verified Modules (AVM)](https://azure.github.io/Azure-Verified-Modules/) via `br/public:avm/res/automation/automation-account:0.17.1`. The Bicep template deploys runbook shells, schedules, and job schedules. The deploy script (`Deploy-Automation.ps1`) uploads the runbook files.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │              Azure Automation Account (AVM)                      │
 ├─────────────────────────────────────────────────────────────────┤
-│  Runbooks (style-dependent):      Schedules (local time zone):  │
+│  Runbooks:                        Schedules (IST):              │
 │  ┌──────────────────────┐        ┌──────────────────────────┐  │
-│  │ PreMaintenance-PRE   │◄───────│ 3rd Sunday 06:00         │  │
-│  │ PreMaintenance-PRD   │◄───────│ 3rd Sunday 06:00         │  │
-│  │ PostMaintenance-PRE  │◄───────│ 3rd Sunday 22:00         │  │
-│  │ PostMaintenance-PRD  │◄───────│ 3rd Sunday 22:00         │  │
+│  │ PreMaintenance-PRE   │◄───────│ Every Sunday 06:00 IST   │  │
+│  │ PreMaintenance-PRD   │◄───────│ Every Sunday 06:00 IST   │  │
+│  │ PostMaintenance-PRE  │◄───────│ Every Sunday 22:00 IST   │  │
+│  │ PostMaintenance-PRD  │◄───────│ Every Sunday 22:00 IST   │  │
 │  └──────────────────────┘        └──────────────────────────┘  │
+│  (3rd Sunday gate built into each runbook)                      │
 │                                                                  │
 │  System-Assigned Managed Identity (no credentials)             │
 └─────────────────────────────────────────────────────────────────┘
@@ -203,7 +142,8 @@ Infrastructure is deployed using [Azure Verified Modules (AVM)](https://azure.gi
 ┌─────────────────────────────────────────────────────────────────┐
 │                    Azure Storage Account                         │
 │  Container: vm-maintenance                                       │
-│  └─► PRE-started-vms-YYYY-MM-DD-HHMMSS.json (auto-deleted)     │
+│  └─► PRE-vm-state-dryrun-true-YYYY-MM-DD-HHMMSS.json           │
+│  └─► PRE-vm-state-dryrun-false-YYYY-MM-DD-HHMMSS.json          │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -211,22 +151,16 @@ Infrastructure is deployed using [Azure Verified Modules (AVM)](https://azure.gi
 
 ```
 ├── runbooks/
-│   ├── PreMaintenance-PRE-Scheduled.ps1    # Zero-touch (Scheduled style)
-│   ├── PreMaintenance-PRD-Scheduled.ps1    # Zero-touch (Scheduled style)
-│   ├── PostMaintenance-PRE-Scheduled.ps1   # Zero-touch (Scheduled style)
-│   ├── PostMaintenance-PRD-Scheduled.ps1   # Zero-touch (Scheduled style)
-│   ├── PreMaintenance-PRE.ps1              # Parameterized (Separate style)
-│   ├── PreMaintenance-PRD.ps1              # Parameterized (Separate style)
-│   ├── PostMaintenance-PRE.ps1             # Parameterized (Separate style)
-│   ├── PostMaintenance-PRD.ps1             # Parameterized (Separate style)
-│   ├── PreMaintenance-Combined.ps1         # Combined style
-│   └── PostMaintenance-Combined.ps1        # Combined style
+│   ├── PreMaintenance-PRE.ps1              # PRE pre-maintenance (start VMs)
+│   ├── PreMaintenance-PRD.ps1              # PRD pre-maintenance (start VMs)
+│   ├── PostMaintenance-PRE.ps1             # PRE post-maintenance (stop VMs)
+│   └── PostMaintenance-PRD.ps1             # PRD post-maintenance (stop VMs)
 ├── infra/
 │   ├── main.bicep                          # Infrastructure as Code (AVM)
 │   ├── main.bicepparam                     # Deployment parameters
 │   └── role-assignments.bicep              # Role assignment template
 ├── scripts/
-│   └── Deploy-Automation.ps1               # Deployment script (all styles)
+│   └── Deploy-Automation.ps1               # Deployment script
 └── README.md
 ```
 
@@ -239,39 +173,32 @@ Infrastructure is deployed using [Azure Verified Modules (AVM)](https://azure.gi
 | Storage Blob Data Contributor | Storage account | State persistence |
 
 ## Troubleshooting
-[## Scheduling on 3rd/4th Sunday of Month]
 
-Azure Automation does not natively support scheduling runbooks for the "nth Sunday" (e.g., 3rd or 4th Sunday) of the month. To achieve this:
+### Scheduling on 3rd Sunday of Month
+
+Azure Automation does not natively support scheduling runbooks for the "nth Sunday" of the month. To work around this:
 
 1. **Create a schedule to run the runbook every Sunday** (weekly recurrence).
-2. **Add logic at the start of your runbook** to check if today is the correct Sunday:
+2. **The runbooks include built-in logic** to check if today is the 3rd Sunday:
 
   ```powershell
   $today = Get-Date
-  $dayOfWeek = $today.DayOfWeek
   $weekOfMonth = [math]::Ceiling($today.Day / 7)
 
-  if ($dayOfWeek -ne 'Sunday') {
-    Write-Output "Not Sunday. Exiting."
+  if ($today.DayOfWeek -ne 'Sunday') {
+    Write-Output "Today is $($today.DayOfWeek), not Sunday. Exiting."
     return
   }
 
-  # For PRE: Only run on 3rd Sunday
-  if ($Environment -eq 'PRE' -and $weekOfMonth -ne 3) {
-    Write-Output "Not 3rd Sunday. Exiting."
-    return
-  }
-
-  # For PRD: Only run on 4th Sunday
-  if ($Environment -eq 'PRD' -and $weekOfMonth -ne 4) {
-    Write-Output "Not 4th Sunday. Exiting."
+  if ($weekOfMonth -ne 3) {
+    Write-Output "Today is Sunday week $weekOfMonth, not the 3rd Sunday. Exiting."
     return
   }
   ```
 
-This ensures the runbook only executes its main logic on the correct Sunday for each environment. The schedule triggers every Sunday, but the runbook exits early unless it's the desired week.
+This logic is already embedded in all 4 runbooks. The schedule triggers every Sunday, but the runbook exits early unless it's the 3rd Sunday.
 
-> **Tip:** You can test this logic by manually running the runbook and observing the output.
+> **Tip:** You can test this logic by manually running the runbook on any day and observing the output.
 
 | Issue | Cause | Solution |
 |-------|-------|----------|

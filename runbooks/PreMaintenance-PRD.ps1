@@ -99,8 +99,9 @@ if (-not (Get-AzStorageContainer -Name $ContainerName -Context $ctx -DefaultProf
 }
 
 $ExecutionModeLabel = if ($DryRun) { "TEST TEST TEST" } else { "LIVE LIVE LIVE" }
+$runLabel = if ($DryRun) { "dryrun" } else { "live" }
 $stateData = @{ Environment=$Environment; FilterBy=$FilterBy; DryRun=$DryRun; Mode=$ExecutionModeLabel; Timestamp=(Get-Date -Format "yyyy-MM-dd HH:mm:ss"); TotalScanned=$allVMs.Count; TotalDeallocated=$deallocatedVMs.Count; TotalFiltered=$filteredVMs.Count; TotalStarted=$startedVMs.Count; TotalFailed=$failedVMs.Count; MatchedVMNames=@($filteredVMs | ForEach-Object { $_.Name }); VMs=($startedVMs + $failedVMs) }
-$blobName = "$Environment-vm-state-dryrun-$($DryRun.ToString().ToLower())-$(Get-Date -Format 'yyyy-MM-dd-HHmmss').json"
+$blobName = "$Environment-vm-state-$runLabel-$(Get-Date -Format 'yyyy-MM-dd-HHmmss').json"
 $tempFile = [System.IO.Path]::GetTempFileName()
 try {
     $stateData | ConvertTo-Json -Depth 5 | Out-File $tempFile -Encoding UTF8

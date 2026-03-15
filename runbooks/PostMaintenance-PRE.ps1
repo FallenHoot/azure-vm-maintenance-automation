@@ -43,7 +43,7 @@ foreach ($sub in $subscriptions) {
 if (-not $storageAccount) { throw "Storage account not found" }
 $ctx = $storageAccount.Context
 
-$blobPattern = "$Environment-vm-state-dryrun-false-*.json"
+$blobPattern = "$Environment-vm-state-live-*.json"
 if ($StateFileName) {
     $blob = Get-AzStorageBlob -Container $ContainerName -Blob $StateFileName -Context $ctx -DefaultProfile $AzureContext -ErrorAction Stop
 } else {

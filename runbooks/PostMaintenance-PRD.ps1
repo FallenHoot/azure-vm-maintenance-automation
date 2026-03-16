@@ -9,7 +9,7 @@ param (
 )
 $Environment = "PRD"
 
-# --- 3rd Sunday gate (uses schedule timezone, not UTC) ---
+# --- 4th Sunday gate (uses schedule timezone, not UTC) ---
 $tz = [System.TimeZoneInfo]::FindSystemTimeZoneById($ScheduleTimeZone)
 $today = [System.TimeZoneInfo]::ConvertTimeFromUtc((Get-Date).ToUniversalTime(), $tz)
 Write-Output "Schedule timezone: $($tz.DisplayName) | Local time: $($today.ToString('yyyy-MM-dd HH:mm:ss dddd'))"
@@ -18,11 +18,11 @@ if ($today.DayOfWeek -ne 'Sunday') {
     Write-Output "Today is $($today.DayOfWeek), not Sunday. Exiting."
     return
 }
-if ($weekOfMonth -ne 3) {
-    Write-Output "Today is Sunday week $weekOfMonth, not the 3rd Sunday. Exiting."
+if ($weekOfMonth -ne 4) {
+    Write-Output "Today is Sunday week $weekOfMonth, not the 4th Sunday. Exiting."
     return
 }
-Write-Output "3rd Sunday confirmed - proceeding with $Environment maintenance."
+Write-Output "4th Sunday confirmed - proceeding with $Environment maintenance."
 
 $ErrorActionPreference = "Stop"
 $null = Disable-AzContextAutosave -Scope Process

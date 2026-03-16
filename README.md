@@ -3,13 +3,13 @@
 > **DISCLAIMER**  
 > This script is provided as sample guidance only and is not a supported Microsoft product. It is provided "AS IS", without warranty of any kind, express or implied, including but not limited to the warranties of merchantability, fitness for a particular purpose, and noninfringement. Microsoft and the author(s) are not liable for any damages arising from the use of this code. Review and test in a non-production environment before use.
 
-Automatically starts deallocated VMs before scheduled maintenance windows and stops them afterward. Runs on the **3rd Sunday** of each month.
+Automatically starts deallocated VMs before scheduled maintenance windows and stops them afterward. Runs on the **4th Sunday** of each month.
 
 ## How It Works
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│  3rd Sunday of Each Month (Automatic)                           │
+│  4th Sunday of Each Month (Automatic)                           │
 ├──────────────────────────────────────────────────────────────────┤
 │                                                                  │
 │  06:00 ─► PreMaintenance Runbook                                │
@@ -32,7 +32,7 @@ Automatically starts deallocated VMs before scheduled maintenance windows and st
 
 ## Deployment
 
-**4 parameterized runbooks with `param()` blocks.** Storage config defaults are in the scripts; override at runtime or via job schedules. Each runbook includes a built-in 3rd Sunday gate — schedule them to run every Sunday and they automatically skip non-3rd-Sunday weeks.
+**4 parameterized runbooks with `param()` blocks.** Storage config defaults are in the scripts; override at runtime or via job schedules. Each runbook includes a built-in 4th Sunday gate — schedule them to run every Sunday and they automatically skip non-4th-Sunday weeks.
 
 ### Step 1: Deploy
 
@@ -133,7 +133,7 @@ Infrastructure is deployed using [Azure Verified Modules (AVM)](https://azure.gi
 │  │ PostMaintenance-PRE  │◄───────│ Every Sunday 22:00        │  │
 │  │ PostMaintenance-PRD  │◄───────│ Every Sunday 22:00        │  │
 │  └──────────────────────┘        └──────────────────────────┘  │
-│  (3rd Sunday gate built into each runbook)                      │
+│  (4th Sunday gate built into each runbook)                      │
 │                                                                  │
 │  System-Assigned Managed Identity (no credentials)             │
 └─────────────────────────────────────────────────────────────────┘
@@ -174,12 +174,12 @@ Infrastructure is deployed using [Azure Verified Modules (AVM)](https://azure.gi
 
 ## Troubleshooting
 
-### Scheduling on 3rd Sunday of Month
+### Scheduling on 4th Sunday of Month
 
 Azure Automation does not natively support scheduling runbooks for the "nth Sunday" of the month. To work around this:
 
 1. **Create a schedule to run the runbook every Sunday** (weekly recurrence).
-2. **The runbooks include built-in logic** to check if today is the 3rd Sunday.
+2. **The runbooks include built-in logic** to check if today is the 4th Sunday.
 
 #### Timezone Handling
 
@@ -197,8 +197,8 @@ if ($today.DayOfWeek -ne 'Sunday') {
     Write-Output "Today is $($today.DayOfWeek), not Sunday. Exiting."
     return
 }
-if ($weekOfMonth -ne 3) {
-    Write-Output "Today is Sunday week $weekOfMonth, not the 3rd Sunday. Exiting."
+if ($weekOfMonth -ne 4) {
+    Write-Output "Today is Sunday week $weekOfMonth, not the 4th Sunday. Exiting."
     return
 }
 ```
@@ -215,7 +215,7 @@ Common `$ScheduleTimeZone` values (IANA format):
 
 > Full list: [IANA Time Zone Database](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones)
 
-This logic is already embedded in all 4 runbooks. The schedule triggers every Sunday, but the runbook exits early unless it's the 3rd Sunday in the configured timezone.
+This logic is already embedded in all 4 runbooks. The schedule triggers every Sunday, but the runbook exits early unless it's the 4th Sunday in the configured timezone.
 
 > **Tip:** You can test this logic by manually running the runbook on any day and observing the output — it will log the converted local time and day of week.
 

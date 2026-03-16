@@ -4,12 +4,15 @@ param (
     [string]$ContainerName = "vm-maintenance",
     [string]$StateFileName = "",
     [bool]$DeleteStateFile = $false,
-    [bool]$DryRun = $false
+    [bool]$DryRun = $false,
+    [string]$ScheduleTimeZone = "W. Europe Standard Time"
 )
 $Environment = "PRE"
 
-# --- 3rd Sunday gate ---
-$today = Get-Date
+# --- 3rd Sunday gate (uses schedule timezone, not UTC) ---
+$tz = [System.TimeZoneInfo]::FindSystemTimeZoneById($ScheduleTimeZone)
+$today = [System.TimeZoneInfo]::ConvertTimeFromUtc((Get-Date).ToUniversalTime(), $tz)
+Write-Output "Schedule timezone: $($tz.DisplayName) | Local time: $($today.ToString('yyyy-MM-dd HH:mm:ss dddd'))"
 $weekOfMonth = [math]::Ceiling($today.Day / 7)
 if ($today.DayOfWeek -ne 'Sunday') {
     Write-Output "Today is $($today.DayOfWeek), not Sunday. Exiting."

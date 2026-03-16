@@ -179,26 +179,43 @@ Infrastructure is deployed using [Azure Verified Modules (AVM)](https://azure.gi
 Azure Automation does not natively support scheduling runbooks for the "nth Sunday" of the month. To work around this:
 
 1. **Create a schedule to run the runbook every Sunday** (weekly recurrence).
-2. **The runbooks include built-in logic** to check if today is the 3rd Sunday:
+2. **The runbooks include built-in logic** to check if today is the 3rd Sunday.
 
-  ```powershell
-  $today = Get-Date
-  $weekOfMonth = [math]::Ceiling($today.Day / 7)
+#### Timezone Handling
 
-  if ($today.DayOfWeek -ne 'Sunday') {
+> **Important:** Azure Automation runs in **UTC**. If your schedule fires near midnight UTC (e.g., 01:00 CET), `Get-Date` may return the previous day (Saturday) instead of Sunday. All runbooks convert UTC to the schedule's timezone before checking the day.
+
+Each runbook has a `$ScheduleTimeZone` parameter (defaults to `"W. Europe Standard Time"`). This **must match the timezone configured in your Azure Automation schedule**.
+
+```powershell
+# Converts UTC to the schedule's timezone before checking the day
+$tz = [System.TimeZoneInfo]::FindSystemTimeZoneById($ScheduleTimeZone)
+$today = [System.TimeZoneInfo]::ConvertTimeFromUtc((Get-Date).ToUniversalTime(), $tz)
+
+$weekOfMonth = [math]::Ceiling($today.Day / 7)
+if ($today.DayOfWeek -ne 'Sunday') {
     Write-Output "Today is $($today.DayOfWeek), not Sunday. Exiting."
     return
-  }
-
-  if ($weekOfMonth -ne 3) {
+}
+if ($weekOfMonth -ne 3) {
     Write-Output "Today is Sunday week $weekOfMonth, not the 3rd Sunday. Exiting."
     return
-  }
-  ```
+}
+```
 
-This logic is already embedded in all 4 runbooks. The schedule triggers every Sunday, but the runbook exits early unless it's the 3rd Sunday.
+Common `$ScheduleTimeZone` values (Windows timezone IDs):
 
-> **Tip:** You can test this logic by manually running the runbook on any day and observing the output.
+| Schedule Timezone | `$ScheduleTimeZone` value |
+|---|---|
+| (UTC+01:00) Amsterdam, Berlin, Rome | `W. Europe Standard Time` |
+| (UTC+05:30) Chennai, Kolkata, Mumbai | `India Standard Time` |
+| (UTC-05:00) Eastern Time (US) | `Eastern Standard Time` |
+| (UTC-06:00) Central Time (US) | `Central Standard Time` |
+| (UTC) Coordinated Universal Time | `UTC` |
+
+This logic is already embedded in all 4 runbooks. The schedule triggers every Sunday, but the runbook exits early unless it's the 3rd Sunday in the configured timezone.
+
+> **Tip:** You can test this logic by manually running the runbook on any day and observing the output — it will log the converted local time and day of week.
 
 | Issue | Cause | Solution |
 |-------|-------|----------|

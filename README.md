@@ -185,7 +185,7 @@ Azure Automation does not natively support scheduling runbooks for the "nth Sund
 
 > **Important:** Azure Automation runs in **UTC**. If your schedule fires near midnight UTC (e.g., 01:00 CET), `Get-Date` may return the previous day (Saturday) instead of Sunday. All runbooks convert UTC to the schedule's timezone before checking the day.
 
-Each runbook has a `$ScheduleTimeZone` parameter (defaults to `"W. Europe Standard Time"`). This **must match the timezone configured in your Azure Automation schedule**.
+Each runbook has a `$ScheduleTimeZone` parameter (defaults to `"Europe/Amsterdam"`). This **must match the timezone configured in your Azure Automation schedule**. Uses standard [IANA timezone IDs](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones).
 
 ```powershell
 # Converts UTC to the schedule's timezone before checking the day
@@ -203,15 +203,17 @@ if ($weekOfMonth -ne 3) {
 }
 ```
 
-Common `$ScheduleTimeZone` values (Windows timezone IDs):
+Common `$ScheduleTimeZone` values (IANA format):
 
 | Schedule Timezone | `$ScheduleTimeZone` value |
 |---|---|
-| (UTC+01:00) Amsterdam, Berlin, Rome | `W. Europe Standard Time` |
-| (UTC+05:30) Chennai, Kolkata, Mumbai | `India Standard Time` |
-| (UTC-05:00) Eastern Time (US) | `Eastern Standard Time` |
-| (UTC-06:00) Central Time (US) | `Central Standard Time` |
+| (UTC+01:00) Amsterdam, Berlin, Rome | `Europe/Amsterdam` |
+| (UTC+05:30) Chennai, Kolkata, Mumbai | `Asia/Kolkata` |
+| (UTC-05:00) Eastern Time (US) | `America/New_York` |
+| (UTC-06:00) Central Time (US) | `America/Chicago` |
 | (UTC) Coordinated Universal Time | `UTC` |
+
+> Full list: [IANA Time Zone Database](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones)
 
 This logic is already embedded in all 4 runbooks. The schedule triggers every Sunday, but the runbook exits early unless it's the 3rd Sunday in the configured timezone.
 

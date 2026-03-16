@@ -5,7 +5,7 @@ param (
     [string]$StateFileName = "",
     [bool]$DeleteStateFile = $false,
     [bool]$DryRun = $false,
-    [string]$ScheduleTimeZone = "W. Europe Standard Time"
+    [string]$ScheduleTimeZone = "Europe/Amsterdam"
 )
 $Environment = "PRE"
 

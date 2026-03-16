@@ -7,7 +7,7 @@ param (
     [string]$TagName = "env",
     [string]$TagValue = "pre",
     [bool]$DryRun = $false,
-    [string]$ScheduleTimeZone = "W. Europe Standard Time"
+    [string]$ScheduleTimeZone = "India Standard Time"
 )
 $Environment = "PRE"
 
